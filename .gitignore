@@ -1,3 +1,4 @@
+# Local caches and build trees; never commit fetched part docs or IDF output.
 .silico/
 build/
 cmake-build-*/
