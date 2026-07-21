@@ -14,7 +14,11 @@ The name is the short half of Turminder Xuss, the drone in Iain M. Banks' *Matte
 - Implementation language: **C** (ESP-IDF), not MicroPython.
 - Voice path **must** investigate [The-Shreyas-M/ESP32-Synth](https://github.com/The-Shreyas-M/ESP32-Synth) before locking DAC/I2S design (see spec §3 and §9).
 
-Background: [tig/silico#50](https://github.com/tig/silico/issues/50), twin [tig/xuss](https://github.com/tig/xuss).
+See Also:
+
+* [Enable ESP32 development in C in addition to the current Python](https://github.com/tig/silico/issues/53)
+* [tig/silico#50](https://github.com/tig/silico/issues/50),
+* Python Version: [tig/xuss](https://github.com/tig/xuss).
 
 ## Host gate (now)
 
