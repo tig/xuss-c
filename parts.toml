@@ -1,4 +1,5 @@
 # Part truth: pointers, not documents.
+# Fetch and cache local copies yourself; never commit them.
 
 [[part]]
 id = "esp32"
@@ -25,10 +26,3 @@ id = "pir-unit"
 name = "M5Stack PIR Unit"
 role = "input"
 docs = "https://docs.m5stack.com/en/unit/pir"
-
-[[part]]
-id = "esp32-synth"
-name = "ESP32-Synth (voice-path prior art)"
-role = "reference"
-docs = "https://github.com/The-Shreyas-M/ESP32-Synth"
-notes = "Normative investigation target for I2S+DAC audio (spec §3.1)."
