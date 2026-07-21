@@ -1,0 +1,17 @@
+.silico/
+build/
+cmake-build-*/
+.venv/
+__pycache__/
+*.o
+*.a
+*.elf
+*.bin
+*.map
+.sdkconfig*
+sdkconfig
+dependencies.lock
+managed_components/
+.idea/
+.vscode/
+*.user
