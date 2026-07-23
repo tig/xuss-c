@@ -4,11 +4,14 @@
 #include "app_board.h"
 
 #include "gcu/defaults.h"
+#include "gcu/face.h"
 #include "gcu/input.h"
 #include "gcu/proto.h"
 #include "gcu/ui.h"
+#include "gcu/version.h"
 
 #include "audio_board.h"
+#include "disp_board.h"
 #include "hal_board.h"
 
 #include "driver/gpio.h"
@@ -19,6 +22,42 @@
 #include "freertos/task.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define PAINT_BAND_H 48
+static unsigned short *paint_buf; /* PAINT_BAND_H * GCU_DISP_W */
+static int disp_ok;
+
+static void paint_rect(const gcu_face_view_t *v, gcu_rect_t r) {
+  if (!disp_ok || !paint_buf) {
+    return;
+  }
+  for (int y0 = 0; y0 < r.h; y0 += PAINT_BAND_H) {
+    gcu_rect_t band = r;
+    band.y = r.y + y0;
+    band.h = r.h - y0 < PAINT_BAND_H ? r.h - y0 : PAINT_BAND_H;
+    gcu_face_paint(v, band, paint_buf);
+    gcu_board_disp_blit(band.x, band.y, band.w, band.h, paint_buf);
+  }
+}
+
+static void fill_view(gcu_face_view_t *v, const gcu_ui_t *ui,
+                      const gcu_input_t *input) {
+  memset(v, 0, sizeof *v);
+  v->screen = ui->screen;
+  v->theme = ui->theme;
+  v->song = ui->song;
+  v->eye_closed = ui->eye_closed;
+  v->banner_step = ui->banner_step;
+  v->heap_free = esp_get_free_heap_size();
+  v->btn_a = gcu_input_held(input, 0);
+  v->btn_b = gcu_input_held(input, 1);
+  v->btn_c = gcu_input_held(input, 2);
+  snprintf(v->fw_line, sizeof v->fw_line, "%s %s", GCU_FW_NAME,
+           GCU_FW_VERSION);
+  /* IMU fields stay 0 until the sensors slice wires them in. */
+}
 
 #define AUDIO_PARK 100 /* audio_board request: not a gcu_audio_req_t */
 
@@ -78,6 +117,10 @@ void gcu_board_app_run(unsigned song_len) {
   buttons_init();
   esp_err_t link_err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
   printf("link=%s\n", link_err == ESP_OK ? "ok" : esp_err_to_name(link_err));
+
+  disp_ok = gcu_board_disp_init();
+  paint_buf = malloc(PAINT_BAND_H * GCU_DISP_W * 2);
+  printf("display=%s\n", disp_ok && paint_buf ? "ok" : "err");
 
   gcu_board_audio_task_start(song_len);
   /* Boot greeting via the audio task: the riff plays while this loop is
@@ -140,12 +183,31 @@ void gcu_board_app_run(unsigned song_len) {
       gcu_ui_song_error(&ui);
     }
 
-    /* Time-based UI schedule; consume paints the board can show today
-     * (side LEDs; the IPS face arrives with the display slice, #5). */
+    /* Time-based UI schedule -> regional paints (spec §4.2/§5.2.7). */
     gcu_ui_tick(&ui, now);
     unsigned dirty = gcu_ui_take_dirty(&ui);
-    if (dirty & (GCU_DIRTY_THEME | GCU_DIRTY_SCREEN)) {
-      gcu_board_led_theme(ui.theme);
+    if (dirty) {
+      gcu_face_view_t view;
+      fill_view(&view, &ui, &input);
+      if (dirty & (GCU_DIRTY_THEME | GCU_DIRTY_SCREEN)) {
+        gcu_board_led_theme(ui.theme);
+        paint_rect(&view, gcu_face_rect_full());
+      } else {
+        if (dirty & GCU_DIRTY_EYE) {
+          paint_rect(&view, gcu_face_rect_eye());
+        }
+        if (dirty & GCU_DIRTY_BANNER) {
+          paint_rect(&view, gcu_face_rect_banner());
+        }
+        if (dirty & GCU_DIRTY_CUE) {
+          paint_rect(&view, gcu_face_rect_cue());
+          gcu_rect_t hints = {0, 216, GCU_DISP_W, GCU_DISP_H - 216};
+          paint_rect(&view, hints); /* play/pause hint glyph flips too */
+        }
+        if (dirty & GCU_DIRTY_DETAILS) {
+          paint_rect(&view, gcu_face_rect_values());
+        }
+      }
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
