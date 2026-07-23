@@ -7,7 +7,7 @@ Xuss-C is a pocket companion for the M5Stack **M5GO IoT Starter Kit v2.7**. It b
 This is the **C-language twin** of [tig/xuss](https://github.com/tig/xuss). Product shape matches that contract: same hardware, same face, same song, same buttons, same Details screen. The intentional differences are the ones that matter for usability:
 
 - **Runtime:** native **C on ESP-IDF** (not MicroPython on [silico](https://github.com/tig/silico)).
-- **Audio:** clean, continuous sample playback without the MicroPython path’s dropouts and low-fidelity compromises.
+- **Audio:** clean, continuous sample playback without the MicroPython path’s dropouts and low-fidelity compromises. We should consider utilizing https://github.com/Shreyas-M/ESP32-Synth.
 - **Multitasking:** the living face, buttons, Details, and USB serial stay responsive **while music plays** — no frozen UI, no “pause first to open Details,” no multi-minute deafness to the link.
 
 This document is the product contract. The first half is written for the person who owns the device. The second half is written for the implementer who must rebuild that experience on ESP-IDF without guessing at product intent.
