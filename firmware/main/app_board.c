@@ -74,9 +74,14 @@ void gcu_board_app_run(unsigned song_len) {
   char rx[64];
 
   buttons_init();
-  uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
+  esp_err_t link_err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
+  printf("link=%s\n", link_err == ESP_OK ? "ok" : esp_err_to_name(link_err));
 
   gcu_board_audio_task_start(song_len);
+  /* Boot greeting via the audio task: the riff plays while this loop is
+   * already servicing the link (spec §4.1/§5.2.4 — identity printed by
+   * app_main before this; the link never waits on audio). */
+  gcu_board_audio_request(GCU_BOARD_AUDIO_RIFF);
   gcu_proto_init(&proto, NULL, emit_line, on_repl, on_reboot, NULL);
   gcu_ui_init(&ui, now_ms());
   gcu_input_init(&input, now_ms());

@@ -13,8 +13,8 @@ void app_main(void) {
   printf("%s\n", id);
   fflush(stdout);
 
-  gcu_board_boot_greeting(); /* riff: eased slice of First */
   unsigned song_len = gcu_board_audio_probe();
 
+  /* Starts the audio task (riff greeting plays async) and the app loop. */
   gcu_board_app_run(song_len);
 }

@@ -26,55 +26,20 @@ static const char AUDIO_MAGIC[4] = {'X', 'C', 'A', '1'};
 static const esp_partition_t *audio_part;
 static unsigned audio_pcm_len; /* 0 = missing/invalid (refuse playback) */
 
-/* Blocking DAC pump for a PLAYING engine; returns at pause/end/error. */
-static void dac_pump(gcu_audio_t *eng, int rate) {
-  dac_continuous_handle_t dac = NULL;
-  dac_continuous_config_t cfg = {
-      .chan_mask = DAC_CHANNEL_MASK_CH0, /* GPIO25: shipped speaker pin */
-      .desc_num = 4,
-      .buf_size = 2048,
-      .freq_hz = (uint32_t)rate,
-      .offset = 0,
-      .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
-      .chan_mode = DAC_CHANNEL_MODE_SIMUL,
-  };
-  if (dac_continuous_new_channels(&cfg, &dac) != ESP_OK) {
-    return;
-  }
-  if (dac_continuous_enable(dac) == ESP_OK) {
-    static uint8_t chunk[2048];
-    int n;
-    while ((n = gcu_audio_next_chunk(eng, chunk, (int)sizeof chunk)) > 0) {
-      size_t written = 0;
-      dac_continuous_write(dac, chunk, (size_t)n, &written, 1000);
-    }
-    /* Let the DMA queue drain so the tail (fade/last samples) plays. */
-    vTaskDelay(pdMS_TO_TICKS(120));
-    dac_continuous_disable(dac);
-  }
-  dac_continuous_del_channels(dac);
-}
-
 static int riff_read(void *user, unsigned offset, unsigned char *dst, int n) {
   (void)user;
   memcpy(dst, riff_start + offset, (size_t)n);
   return n;
 }
 
-void gcu_board_boot_greeting(void) {
-  gcu_audio_t eng;
-  unsigned len = (unsigned)(riff_end - riff_start);
-  gcu_audio_init(&eng, riff_read, NULL, len, GCU_DEFAULTS.volume_default);
-  if (gcu_audio_start(&eng)) {
-    dac_pump(&eng, GCU_DEFAULTS.tone_sample_hz);
-  }
-}
-
-/* --- Full-song playback task (spec §5.2: audio never blocks UI/link) --- */
+/* --- Playback task (spec §5.2: audio never blocks UI/link).
+ * Plays the boot riff (embedded) and the full song (partition); the
+ * riff has priority when both are pending (boot only). --- */
 
 static QueueHandle_t req_q;
 static QueueHandle_t ev_q;
 static gcu_audio_t song;
+static gcu_audio_t riff;
 
 static void audio_task(void *arg) {
   (void)arg;
@@ -93,7 +58,8 @@ static void audio_task(void *arg) {
 
   for (;;) {
     int req;
-    TickType_t wait = song.state == GCU_AUDIO_PLAYING ? 0 : pdMS_TO_TICKS(50);
+    int busy = song.state == GCU_AUDIO_PLAYING || riff.state == GCU_AUDIO_PLAYING;
+    TickType_t wait = busy ? 0 : pdMS_TO_TICKS(50);
     while (xQueueReceive(req_q, &req, wait) == pdTRUE) {
       switch (req) {
         case GCU_AUDIO_START:
@@ -105,14 +71,33 @@ static void audio_task(void *arg) {
         case GCU_AUDIO_RESUME:
           gcu_audio_resume(&song);
           break;
+        case GCU_BOARD_AUDIO_RIFF:
+          gcu_audio_start(&riff);
+          break;
         default: /* park/stop (repl, reboot) */
           gcu_audio_stop(&song);
+          gcu_audio_stop(&riff);
           break;
       }
       wait = 0;
     }
 
-    if (song.state == GCU_AUDIO_PLAYING) {
+    if (riff.state == GCU_AUDIO_PLAYING) {
+      if (!dac_on) {
+        if (dac_continuous_new_channels(&cfg, &dac) != ESP_OK ||
+            dac_continuous_enable(dac) != ESP_OK) {
+          gcu_audio_stop(&riff);
+          continue;
+        }
+        dac_on = 1;
+      }
+      int n = gcu_audio_next_chunk(&riff, chunk, (int)sizeof chunk);
+      if (n > 0) {
+        size_t written = 0;
+        dac_continuous_write(dac, chunk, (size_t)n, &written, 1000);
+      }
+      /* riff end: engine resets itself; no UI event needed */
+    } else if (song.state == GCU_AUDIO_PLAYING) {
       if (!dac_on) {
         if (dac_continuous_new_channels(&cfg, &dac) != ESP_OK ||
             dac_continuous_enable(dac) != ESP_OK) {
@@ -133,7 +118,8 @@ static void audio_task(void *arg) {
         xQueueSend(ev_q, &ev, 0);
       }
     }
-    if (song.state != GCU_AUDIO_PLAYING && dac_on) {
+    if (song.state != GCU_AUDIO_PLAYING && riff.state != GCU_AUDIO_PLAYING &&
+        dac_on) {
       vTaskDelay(pdMS_TO_TICKS(120)); /* drain so pause does not click */
       dac_continuous_disable(dac);
       dac_continuous_del_channels(dac);
@@ -145,6 +131,8 @@ static void audio_task(void *arg) {
 
 void gcu_board_audio_task_start(unsigned pcm_len) {
   gcu_audio_init(&song, gcu_board_audio_read, NULL, pcm_len,
+                 GCU_DEFAULTS.volume_default);
+  gcu_audio_init(&riff, riff_read, NULL, (unsigned)(riff_end - riff_start),
                  GCU_DEFAULTS.volume_default);
   req_q = xQueueCreate(8, sizeof(int));
   ev_q = xQueueCreate(8, sizeof(int));
@@ -167,6 +155,7 @@ int gcu_board_audio_poll_event(void) {
 
 void gcu_board_audio_set_volume(int volume) {
   song.volume = volume; /* task reads per chunk; benign int write */
+  riff.volume = volume;
 }
 
 int gcu_board_audio_read(void *user, unsigned offset, unsigned char *dst,
