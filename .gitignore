@@ -1,0 +1,7 @@
+# Local caches and host noise (never commit).
+.silico/
+__pycache__/
+.venv/
+.pytest_cache/
+build/
+*.pyc
