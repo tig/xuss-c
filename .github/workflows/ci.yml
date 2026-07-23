@@ -37,11 +37,10 @@ jobs:
         run: |
           silico version
           silico doctor
-      - name: Host gate
+      - name: Host gate (C / ESP-IDF plate)
         run: |
-          # Spec-only trees may not have pytest suite yet; run when present.
-          if [ -f pytest.ini ] || [ -d sim ] || [ -d host ] || [ -d tests ]; then
-            python -m pytest -q
-          else
-            echo "No host tests yet (spec-only). silico install + doctor is the gate."
-          fi
+          # language=c: CMake + CTest under host/ (not pytest).
+          cmake -S host -B build/host
+          cmake --build build/host --target host_test
+          silico gate
+          silico product-path
