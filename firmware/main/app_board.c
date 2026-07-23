@@ -71,8 +71,10 @@ void gcu_board_app_run(unsigned song_len) {
   gcu_ui_t ui;
   gcu_input_t input;
   gcu_proto_t proto;
-  char rx[64];
+  char rx[256]; /* per-turn intake must beat the 115200 line rate */
 
+  gcu_make_board_hal(); /* initializes the side strip (review P0: was dropped
+                           in the app rewrite — theme LEDs were dead) */
   buttons_init();
   esp_err_t link_err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0);
   printf("link=%s\n", link_err == ESP_OK ? "ok" : esp_err_to_name(link_err));

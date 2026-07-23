@@ -88,8 +88,12 @@ static void dispatch(gcu_proto_t *p, char *line) {
     return;
   }
   if (strcmp(cmd, "save") == 0) {
-    if (p->on_save) p->on_save(p->user);
-    emitf(p, "ok save");
+    if (p->on_save) {
+      p->on_save(p->user);
+      emitf(p, "ok save");
+    } else {
+      emitf(p, "err no persistence"); /* never claim a save that no-ops */
+    }
     return;
   }
   if (strcmp(cmd, "defaults") == 0) {

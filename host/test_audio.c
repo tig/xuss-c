@@ -23,6 +23,14 @@ static int src_read(void *user, unsigned offset, unsigned char *dst, int n) {
   return n;
 }
 
+static int err_read(void *user, unsigned offset, unsigned char *dst, int n) {
+  (void)user;
+  (void)offset;
+  (void)dst;
+  (void)n;
+  return -1;
+}
+
 int main(void) {
   gcu_audio_t a;
   unsigned char buf[64];
@@ -71,6 +79,12 @@ int main(void) {
   /* Resume from nothing fails cleanly. */
   gcu_audio_init(&a, src_read, NULL, 10, 127);
   CHECK(gcu_audio_resume(&a) == 0);
+
+  /* Read error is distinct from natural end and stops playback. */
+  gcu_audio_init(&a, err_read, NULL, 100, 127);
+  gcu_audio_start(&a);
+  CHECK(gcu_audio_next_chunk(&a, buf, 16) == -1);
+  CHECK(a.state == GCU_AUDIO_STOPPED);
 
   if (fails) {
     return 1;

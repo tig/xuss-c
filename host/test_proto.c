@@ -67,6 +67,10 @@ int main(void) {
   feed(&p, "get bogus\n");
   CHECK(strncmp(last, "err", 3) == 0);
 
+  /* save without a persistence hook must not claim success */
+  feed(&p, "save\n");
+  CHECK(strcmp(last, "err no persistence") == 0);
+
   /* defaults resets volume/telemetry, keeps mute (exempt list) */
   feed(&p, "set volume 99\n");
   CHECK(p.volume == 99);

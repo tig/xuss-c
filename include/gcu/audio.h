@@ -36,7 +36,7 @@ void gcu_audio_stop(gcu_audio_t *a);   /* offset back to 0 */
 
 /* Fill dst with up to max volume-scaled samples while PLAYING.
  * Returns bytes produced; 0 means natural end (state -> STOPPED,
- * offset -> 0) or not playing. */
+ * offset -> 0) or not playing; -1 means a read error (also stops). */
 int gcu_audio_next_chunk(gcu_audio_t *a, unsigned char *dst, int max);
 
 #endif

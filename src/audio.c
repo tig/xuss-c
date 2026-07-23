@@ -51,7 +51,7 @@ int gcu_audio_next_chunk(gcu_audio_t *a, unsigned char *dst, int max) {
   int got = a->read(a->user, a->offset, dst, want);
   if (got <= 0) {
     gcu_audio_stop(a); /* read error: fail to idle, UI stays usable */
-    return 0;
+    return -1;        /* distinct from natural end so callers can report */
   }
   /* Volume: scale around the 128 midpoint (8-bit unsigned). */
   int vol = a->volume;
