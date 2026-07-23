@@ -9,4 +9,9 @@ const gcu_defaults_t GCU_DEFAULTS = {
     .tone_freq_hz = GCU_TONE_FREQ_HZ,
     .tone_ms = GCU_TONE_MS,
     .tone_amplitude = GCU_TONE_AMPLITUDE,
+    .wink_period_ms = GCU_WINK_PERIOD_MS,
+    .wink_hold_ms = GCU_WINK_HOLD_MS,
+    .banner_step_ms = GCU_BANNER_STEP_MS,
+    .details_refresh_ms = GCU_DETAILS_REFRESH_MS,
+    .volume_default = GCU_VOLUME_DEFAULT,
 };
