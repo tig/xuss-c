@@ -1,29 +1,20 @@
-#include "gcu/defaults.h"
 #include "gcu/domain.h"
-#include "gcu/hal.h"
-#include "gcu/version.h"
+
+#include "app_board.h"
 #include "audio_board.h"
-#include "hal_board.h"
 
 #include <stdio.h>
 
 void app_main(void) {
   char id[64];
-  gcu_state_t st;
-  gcu_hal_t *hal = gcu_make_board_hal();
 
+  /* Identity first — never waits on audio (spec §4.1, §6.1). */
   gcu_identity_line(id, (int)sizeof id);
   printf("%s\n", id);
   fflush(stdout);
 
-  gcu_board_boot_greeting();
-  gcu_board_audio_probe();
+  gcu_board_boot_greeting(); /* riff: eased slice of First */
+  unsigned song_len = gcu_board_audio_probe();
 
-  gcu_init(&st, hal);
-  for (;;) {
-    gcu_tick(&st);
-    if (hal && hal->delay_ms) {
-      hal->delay_ms(hal, gcu_tick_sleep_ms(&st));
-    }
-  }
+  gcu_board_app_run(song_len);
 }

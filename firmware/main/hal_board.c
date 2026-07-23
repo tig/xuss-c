@@ -27,6 +27,32 @@ static void set_led(gcu_hal_t *self, int on) {
   }
 }
 
+/* Side LEDs match the active theme; black forces sides off (spec §4.2).
+ * Index order follows gcu_theme_t. */
+static const unsigned char THEME_RGB[][3] = {
+    {0, 0, 64},  /* blue */
+    {64, 20, 0}, /* orange */
+    {64, 0, 0},  /* red */
+    {0, 64, 0},  /* green */
+    {0, 0, 0},   /* black: off */
+};
+
+void gcu_board_led_theme(int theme) {
+  if (!strip) {
+    return;
+  }
+  if (theme < 0 || theme >= (int)(sizeof THEME_RGB / sizeof THEME_RGB[0]) ||
+      (THEME_RGB[theme][0] | THEME_RGB[theme][1] | THEME_RGB[theme][2]) == 0) {
+    led_strip_clear(strip);
+    return;
+  }
+  for (int i = 0; i < GCU_DEFAULTS.side_led_count; i++) {
+    led_strip_set_pixel(strip, i, THEME_RGB[theme][0], THEME_RGB[theme][1],
+                        THEME_RGB[theme][2]);
+  }
+  led_strip_refresh(strip);
+}
+
 static void delay_ms(gcu_hal_t *self, int ms) {
   (void)self;
   vTaskDelay(pdMS_TO_TICKS(ms > 0 ? ms : 1));

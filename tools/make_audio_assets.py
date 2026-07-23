@@ -21,6 +21,10 @@ from pathlib import Path
 RATE = 22050
 RIFF_START = 7.5
 RIFF_END = 10.0
+# Riff is a mid-track slice: ease in and out so it does not hard-cut
+# (spec.md §4.1; operator: "ends sharply" without this).
+RIFF_FADE_IN = 0.06
+RIFF_FADE_OUT = 0.35
 MAGIC = b"XCA1"
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,8 +33,8 @@ RIFF_OUT = ROOT / "firmware" / "main" / "assets" / "riff.pcm"
 FULL_OUT = ROOT / "build" / "first_audio.bin"
 
 
-def ffmpeg_pcm(args: list[str]) -> bytes:
-    cmd = ["ffmpeg", "-v", "error", "-i", str(SRC), *args,
+def ffmpeg_pcm(pre: list[str], post: list[str]) -> bytes:
+    cmd = ["ffmpeg", "-v", "error", *pre, "-i", str(SRC), *post,
            "-ac", "1", "-ar", str(RATE), "-f", "u8", "-"]
     return subprocess.run(cmd, check=True, capture_output=True).stdout
 
@@ -40,12 +44,16 @@ def main() -> int:
         print(f"missing {SRC}", file=sys.stderr)
         return 1
 
-    riff = ffmpeg_pcm(["-ss", str(RIFF_START), "-to", str(RIFF_END)])
+    dur = RIFF_END - RIFF_START
+    fade = (f"afade=t=in:st=0:d={RIFF_FADE_IN},"
+            f"afade=t=out:st={dur - RIFF_FADE_OUT}:d={RIFF_FADE_OUT}")
+    riff = ffmpeg_pcm(["-ss", str(RIFF_START), "-to", str(RIFF_END)],
+                      ["-af", fade])
     RIFF_OUT.parent.mkdir(parents=True, exist_ok=True)
     RIFF_OUT.write_bytes(riff)
     print(f"riff: {len(riff)} bytes -> {RIFF_OUT}")
 
-    full = ffmpeg_pcm([])
+    full = ffmpeg_pcm([], [])
     FULL_OUT.parent.mkdir(parents=True, exist_ok=True)
     header = MAGIC + struct.pack("<II", RATE, len(full)) + b"\0" * 4
     FULL_OUT.write_bytes(header + full)

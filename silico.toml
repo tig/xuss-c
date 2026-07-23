@@ -18,7 +18,7 @@ product_defaults = "include/gcu/defaults.h"
 
 [hal]
 # Only these stems may #include freertos / esp_* / driver headers.
-allow_device_headers = ["hal_board", "audio_board"]
+allow_device_headers = ["hal_board", "audio_board", "app_board"]
 
 [deploy]
 mode = "idf-flash"

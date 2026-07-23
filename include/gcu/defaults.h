@@ -19,6 +19,13 @@
 #define GCU_TONE_MS 800
 #define GCU_TONE_AMPLITUDE 40 /* of 127; gentle desk level */
 
+/* Front buttons (M5Stack Core: A=GPIO39, B=GPIO38, C=GPIO37, active low;
+ * no internal pulls on 34-39 — board has external pullups). */
+#define GCU_BTN_A_PIN 39
+#define GCU_BTN_B_PIN 38
+#define GCU_BTN_C_PIN 37
+#define GCU_DEBOUNCE_MS 20
+
 /* UI schedule (spec.md §4.2, §4.5). Banner step and wink hold are not
  * pinned by the spec ("smooth scroll", "short wink") — chosen here, logged
  * as assumptions on issue #4. */
@@ -37,6 +44,10 @@ typedef struct {
   int tone_freq_hz;
   int tone_ms;
   int tone_amplitude;
+  int btn_a_pin;
+  int btn_b_pin;
+  int btn_c_pin;
+  int debounce_ms;
   int wink_period_ms;
   int wink_hold_ms;
   int banner_step_ms;
