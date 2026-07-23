@@ -15,6 +15,8 @@ void app_main(void) {
   printf("%s\n", id);
   fflush(stdout);
 
+  gcu_board_boot_greeting();
+
   gcu_init(&st, hal);
   for (;;) {
     gcu_tick(&st);

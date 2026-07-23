@@ -29,6 +29,13 @@ int main(void) {
     fprintf(stderr, "defaults table mismatch\n");
     return 1;
   }
+  if (GCU_DEFAULTS.side_led_pin != GCU_SIDE_LED_PIN ||
+      GCU_DEFAULTS.side_led_count != GCU_SIDE_LED_COUNT ||
+      GCU_DEFAULTS.speaker_dac_pin != GCU_SPEAKER_DAC_PIN ||
+      GCU_DEFAULTS.tone_sample_hz != GCU_TONE_SAMPLE_HZ) {
+    fprintf(stderr, "product face defaults mismatch\n");
+    return 1;
+  }
 
   gcu_init(&st, &hal);
   if (gcu_tick_sleep_ms(&st) != GCU_DEFAULTS.tick_sleep_ms) {
