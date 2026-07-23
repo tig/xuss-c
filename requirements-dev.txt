@@ -1,0 +1,9 @@
+# Host-only. Package distribution name is tig-silico; CLI entry point is still `silico`.
+# Do not `pip install silico` (unrelated package on PyPI).
+#
+# Pin: editable local clone as a sibling of this GCU (../silico).
+# Day 1: agent clones tig/silico beside the GCU if missing, then pip install -e.
+# CI: .github/workflows/ci.yml checks out GCU + silico as siblings so
+#     `pip install -r requirements-dev.txt` works unchanged.
+-e ../silico
+pytest>=8
