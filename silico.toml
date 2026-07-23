@@ -7,7 +7,7 @@ fw_version = "0.0.1"
 language = "c"
 toolchain = "esp-idf"
 # Pin when the product freezes an IDF release (agent + doctor).
-# esp_idf = "v5.3.2"
+esp_idf = "v5.3.2"
 board = "esp32"
 chip = "esp32"
 baud = 115200

@@ -16,3 +16,7 @@ managed_components/
 .idea/
 .vscode/
 *.user
+
+eim_config.toml
+eim.log
+
