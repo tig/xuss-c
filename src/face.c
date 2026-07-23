@@ -20,8 +20,8 @@
 #define CUE_Y 186
 #define CUE_H 22
 #define HINT_Y 216
-#define VAL_X 150
-#define VAL_W 160
+#define VAL_X 144
+#define VAL_W 176 /* fits "-2000 -2000 -2000" (17 cells) — review P2 */
 #define ROW0_Y 44
 #define ROW_H 26
 
@@ -97,7 +97,9 @@ static unsigned short face_pixel(const gcu_face_view_t *v,
   if (y < BANNER_H) {
     int text_w = (int)(sizeof BANNER_TEXT - 1) * GCU_FONT_W;
     int span = GCU_DISP_W + text_w;
-    int off = (v->banner_step * BANNER_SPEED) % span;
+    /* unsigned math: step*speed may wrap; C signed % would go negative
+     * and blank the marquee (review P2) */
+    int off = (int)(((unsigned)v->banner_step * BANNER_SPEED) % (unsigned)span);
     int tx = GCU_DISP_W - off;
     if (text_hit(BANNER_TEXT, tx, (BANNER_H - GCU_FONT_H) / 2, x, y)) {
       return p->ink;
@@ -118,8 +120,9 @@ static unsigned short face_pixel(const gcu_face_view_t *v,
     return p->face;
   }
 
-  /* Smile: lower arc band of a circle centered between the eyes. */
-  {
+  /* Smile: lower arc band, clipped above the cue line so the playing
+   * title is never overdrawn (review P1). */
+  if (y < CUE_Y) {
     int dx = x - (GCU_DISP_W / 2), dy = y - SMILE_CY;
     int d2 = dx * dx + dy * dy;
     int lo = (SMILE_R - 4) * (SMILE_R - 4), hi = (SMILE_R + 4) * (SMILE_R + 4);
@@ -191,10 +194,12 @@ static unsigned short details_pixel(const gcu_face_view_t *v,
       case 1:
         snprintf(buf, sizeof buf, "%d %d %d", v->gx_dps, v->gy_dps, v->gz_dps);
         break;
-      case 2:
-        snprintf(buf, sizeof buf, "%d.%d C", v->temp_dc / 10,
-                 v->temp_dc < 0 ? -v->temp_dc % 10 : v->temp_dc % 10);
+      case 2: {
+        int t = v->temp_dc < 0 ? -v->temp_dc : v->temp_dc;
+        snprintf(buf, sizeof buf, "%s%d.%d C", v->temp_dc < 0 ? "-" : "",
+                 t / 10, t % 10); /* keeps the sign for -0.x (review P2) */
         break;
+      }
       case 3:
         snprintf(buf, sizeof buf, "%u", v->heap_free);
         break;

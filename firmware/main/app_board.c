@@ -131,7 +131,8 @@ void gcu_board_app_run(unsigned song_len) {
   gcu_ui_init(&ui, now_ms());
   gcu_input_init(&input, now_ms());
   gcu_board_led_theme(ui.theme);
-  gcu_ui_take_dirty(&ui);
+  /* init leaves GCU_DIRTY_SCREEN set: the loop's first pass paints the
+   * full face (review P0: discarding it left boot GRAM noise on screen) */
 
   for (;;) {
     unsigned now = now_ms();
