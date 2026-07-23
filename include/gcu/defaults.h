@@ -26,6 +26,10 @@
 #define GCU_BTN_C_PIN 37
 #define GCU_DEBOUNCE_MS 20
 
+/* Internal I2C bus (MPU6886 IMU on the M5 core). */
+#define GCU_I2C_SDA_PIN 21
+#define GCU_I2C_SCL_PIN 22
+
 /* UI schedule (spec.md §4.2, §4.5). Banner step and wink hold are not
  * pinned by the spec ("smooth scroll", "short wink") — chosen here, logged
  * as assumptions on issue #4. */
@@ -48,6 +52,8 @@ typedef struct {
   int btn_b_pin;
   int btn_c_pin;
   int debounce_ms;
+  int i2c_sda_pin;
+  int i2c_scl_pin;
   int wink_period_ms;
   int wink_hold_ms;
   int banner_step_ms;

@@ -13,6 +13,7 @@
 #include "audio_board.h"
 #include "disp_board.h"
 #include "hal_board.h"
+#include "sensor_board.h"
 
 #include "driver/gpio.h"
 #include "driver/uart.h"
@@ -56,7 +57,18 @@ static void fill_view(gcu_face_view_t *v, const gcu_ui_t *ui,
   v->btn_c = gcu_input_held(input, 2);
   snprintf(v->fw_line, sizeof v->fw_line, "%s %s", GCU_FW_NAME,
            GCU_FW_VERSION);
-  /* IMU fields stay 0 until the sensors slice wires them in. */
+  if (v->screen == GCU_SCREEN_DETAILS) {
+    int mg[3], dps[3], temp;
+    if (gcu_board_imu_read(mg, dps, &temp)) {
+      v->ax_mg = mg[0];
+      v->ay_mg = mg[1];
+      v->az_mg = mg[2];
+      v->gx_dps = dps[0];
+      v->gy_dps = dps[1];
+      v->gz_dps = dps[2];
+      v->temp_dc = temp;
+    }
+  }
 }
 
 #define AUDIO_PARK 100 /* audio_board request: not a gcu_audio_req_t */
@@ -121,6 +133,7 @@ void gcu_board_app_run(unsigned song_len) {
   disp_ok = gcu_board_disp_init();
   paint_buf = malloc(PAINT_BAND_H * GCU_DISP_W * 2);
   printf("display=%s\n", disp_ok && paint_buf ? "ok" : "err");
+  gcu_board_imu_init(); /* prints imu=ok / imu=missing */
 
   gcu_board_audio_task_start(song_len);
   /* Boot greeting via the audio task: the riff plays while this loop is
