@@ -2,6 +2,7 @@
 #include "gcu/domain.h"
 #include "gcu/hal.h"
 #include "gcu/version.h"
+#include "audio_board.h"
 #include "hal_board.h"
 
 #include <stdio.h>
@@ -16,6 +17,7 @@ void app_main(void) {
   fflush(stdout);
 
   gcu_board_boot_greeting();
+  gcu_board_audio_probe();
 
   gcu_init(&st, hal);
   for (;;) {
