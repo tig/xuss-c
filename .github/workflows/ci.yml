@@ -1,0 +1,16 @@
+# C host gate: build src/ + host/ with the runner's toolchain and run ctest.
+# Device (ESP-IDF) builds are not run here; metal is proven on the bench.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S host -B build/host
+      - name: Host gate
+        run: cmake --build build/host --target host_test
