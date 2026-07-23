@@ -171,9 +171,29 @@ static unsigned short face_pixel(const gcu_face_view_t *v,
 
 /* --- Details screen --------------------------------------------------- */
 
+typedef struct {
+  char rows[6][32];
+} details_strs_t;
+
+/* Format the six value strings once per paint call — a per-pixel
+ * snprintf costs ~27k calls per values refresh (review P1). */
+static void details_prepare(const gcu_face_view_t *v, details_strs_t *s) {
+  int t = v->temp_dc < 0 ? -v->temp_dc : v->temp_dc;
+  snprintf(s->rows[0], 32, "%d %d %d", v->ax_mg, v->ay_mg, v->az_mg);
+  snprintf(s->rows[1], 32, "%d %d %d", v->gx_dps, v->gy_dps, v->gz_dps);
+  snprintf(s->rows[2], 32, "%s%d.%d C", v->temp_dc < 0 ? "-" : "", t / 10,
+           t % 10); /* keeps the sign for -0.x */
+  snprintf(s->rows[3], 32, "%u", v->heap_free);
+  snprintf(s->rows[4], 32, "%s%s%s", v->btn_a ? "A" : "-",
+           v->btn_b ? "B" : "-", v->btn_c ? "C" : "-");
+  snprintf(s->rows[5], 32, "%s", v->song == GCU_SONG_PLAYING  ? "playing"
+                                 : v->song == GCU_SONG_PAUSED ? "paused"
+                                                              : "idle");
+}
+
 static unsigned short details_pixel(const gcu_face_view_t *v,
-                                    const theme_pal_t *p, int x, int y) {
-  char buf[32];
+                                    const theme_pal_t *p,
+                                    const details_strs_t *s, int x, int y) {
   /* Firmware identity header (readable digits — §4.5). */
   if (text_hit(v->fw_line, 16, 12, x, y)) {
     return p->ink;
@@ -185,38 +205,10 @@ static unsigned short details_pixel(const gcu_face_view_t *v,
       return p->ink;
     }
   }
-  if (x >= VAL_X) {
+  if (x >= VAL_X && y >= ROW0_Y) { /* no row-0 spillover above ROW0_Y */
     int row = (y - ROW0_Y) / ROW_H;
-    switch (row) {
-      case 0:
-        snprintf(buf, sizeof buf, "%d %d %d", v->ax_mg, v->ay_mg, v->az_mg);
-        break;
-      case 1:
-        snprintf(buf, sizeof buf, "%d %d %d", v->gx_dps, v->gy_dps, v->gz_dps);
-        break;
-      case 2: {
-        int t = v->temp_dc < 0 ? -v->temp_dc : v->temp_dc;
-        snprintf(buf, sizeof buf, "%s%d.%d C", v->temp_dc < 0 ? "-" : "",
-                 t / 10, t % 10); /* keeps the sign for -0.x (review P2) */
-        break;
-      }
-      case 3:
-        snprintf(buf, sizeof buf, "%u", v->heap_free);
-        break;
-      case 4:
-        snprintf(buf, sizeof buf, "%s%s%s", v->btn_a ? "A" : "-",
-                 v->btn_b ? "B" : "-", v->btn_c ? "C" : "-");
-        break;
-      case 5:
-        snprintf(buf, sizeof buf, "%s", v->song == GCU_SONG_PLAYING  ? "playing"
-                                        : v->song == GCU_SONG_PAUSED ? "paused"
-                                                                     : "idle");
-        break;
-      default:
-        return p->bg;
-    }
     if (row >= 0 && row < 6 &&
-        text_hit(buf, VAL_X, ROW0_Y + row * ROW_H + 4, x, y)) {
+        text_hit(s->rows[row], VAL_X, ROW0_Y + row * ROW_H + 4, x, y)) {
       return p->ink;
     }
   }
@@ -228,13 +220,17 @@ void gcu_face_paint(const gcu_face_view_t *v, gcu_rect_t rect,
   const theme_pal_t *p = &PAL[v->theme >= 0 && v->theme < GCU_THEME_COUNT
                                   ? v->theme
                                   : GCU_THEME_BLUE];
+  details_strs_t strs;
+  int details = v->screen == GCU_SCREEN_DETAILS;
+  if (details) {
+    details_prepare(v, &strs);
+  }
   for (int ry = 0; ry < rect.h; ry++) {
     int y = rect.y + ry;
     for (int rx = 0; rx < rect.w; rx++) {
       int x = rect.x + rx;
-      buf[ry * rect.w + rx] = v->screen == GCU_SCREEN_DETAILS
-                                  ? details_pixel(v, p, x, y)
-                                  : face_pixel(v, p, x, y);
+      buf[ry * rect.w + rx] = details ? details_pixel(v, p, &strs, x, y)
+                                      : face_pixel(v, p, x, y);
     }
   }
 }

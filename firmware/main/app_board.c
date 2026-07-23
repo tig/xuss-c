@@ -58,16 +58,17 @@ static void fill_view(gcu_face_view_t *v, const gcu_ui_t *ui,
   snprintf(v->fw_line, sizeof v->fw_line, "%s %s", GCU_FW_NAME,
            GCU_FW_VERSION);
   if (v->screen == GCU_SCREEN_DETAILS) {
-    int mg[3], dps[3], temp;
-    if (gcu_board_imu_read(mg, dps, &temp)) {
-      v->ax_mg = mg[0];
-      v->ay_mg = mg[1];
-      v->az_mg = mg[2];
-      v->gx_dps = dps[0];
-      v->gy_dps = dps[1];
-      v->gz_dps = dps[2];
-      v->temp_dc = temp;
-    }
+    /* Last-good cache: a transient I2C failure holds the previous sample
+     * instead of flashing zeros (review P2). */
+    static int mg[3], dps[3], temp;
+    gcu_board_imu_read(mg, dps, &temp); /* updates only on success */
+    v->ax_mg = mg[0];
+    v->ay_mg = mg[1];
+    v->az_mg = mg[2];
+    v->gx_dps = dps[0];
+    v->gy_dps = dps[1];
+    v->gz_dps = dps[2];
+    v->temp_dc = temp;
   }
 }
 

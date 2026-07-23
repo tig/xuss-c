@@ -1,14 +1,24 @@
 # Install / update (Xuss-C)
 
-## What good looks like (hello-metal product face)
+## What good looks like (product face)
 
 After power-on or reset, on the M5GO:
 
-1. Serial prints `fw_name=XUSSC fw_version=…` first (115200 baud).
-2. The boot riff plays — a ~2.5 s recognizable slice of *First* by Tig.
-3. Serial prints the song status: `audio=ok bytes=… rate=22050`
-   (or `audio=missing` if the song partition was never flashed).
-4. The side LED strips blink blue about twice per second, indefinitely.
+1. Serial prints `fw_name=XUSSC fw_version=…` first (115200 baud),
+   then `audio=ok bytes=… rate=22050`, `link=ok`, `display=ok`, `imu=ok`.
+2. The boot riff plays — a ~2.5 s recognizable slice of *First* by Tig,
+   easing out (no hard cut).
+3. The screen shows the idle face: blue theme, scrolling banner
+   `Xuss-C; built on ESP-IDF`, eyes + smile, button hints
+   (color / play triangle / gear). The right eye winks every ~10 s.
+   Side LED strips glow the theme color.
+4. Buttons per the manual: A cycles blue→orange→red→green→black
+   (black = white background, side LEDs off); B plays / pauses / resumes
+   the full *First* track while the face keeps living; C opens Details
+   (live IMU values ~10x/s, works while music plays; A exits without a
+   theme change).
+5. The serial link answers `identity`, `repl` (parks outputs,
+   flashable state), and `reboot` — including mid-song.
 
 No tone or no side lights after a good flash = product defect; see
 `firmware/main/hal_board.c` (pins come from `include/gcu/defaults.h`:
