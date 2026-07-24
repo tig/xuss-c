@@ -204,6 +204,10 @@ void app_main(void) {
           d.button[1] = (m >> 1) & 1;
           d.button[2] = (m >> 2) & 1;
         }
+        if (hal && hal->read_imu) {
+          hal->read_imu(hal, d.accel_mg, d.gyro_mdps, &d.imu_temp_mc);
+        }
+        d.heap_free = (hal && hal->free_heap) ? hal->free_heap(hal) : -1;
         gcu_render_details_values(gfx, app.theme, &d);
         last_details_ms = now;
       }

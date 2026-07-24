@@ -1,10 +1,12 @@
 /* Device HAL backend — only TU allowlisted for device headers. */
 #include "hal_board.h"
+#include "hal_imu.h"
 #include "hal_input.h"
 
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,6 +30,11 @@ static void delay_ms(gcu_hal_t *self, int ms) {
 static long now_ms(gcu_hal_t *self) {
   (void)self;
   return (long)(esp_timer_get_time() / 1000);
+}
+
+static long free_heap(gcu_hal_t *self) {
+  (void)self;
+  return (long)heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
 
 /*
@@ -99,6 +106,8 @@ static gcu_hal_t board_hal = {
     .delay_ms = delay_ms,
     .now_ms = now_ms,
     .read_buttons = gcu_input_read,
+    .read_imu = gcu_imu_read,
+    .free_heap = free_heap,
     .play_pcm = play_pcm,
 };
 
@@ -106,5 +115,6 @@ gcu_hal_t *gcu_make_board_hal(void) {
   gpio_reset_pin(GCU_LED_GPIO);
   gpio_set_direction(GCU_LED_GPIO, GPIO_MODE_OUTPUT);
   gcu_input_init();
+  gcu_imu_init();
   return &board_hal;
 }
