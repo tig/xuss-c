@@ -149,6 +149,7 @@ static void audio_stream_task(void *arg) {
     }
     fclose(f);
   } else {
+    ESP_LOGE("hal_board", "song asset missing: %s", s_audio_path);
     s_audio_done = 1;
   }
   s_audio_task = NULL;
