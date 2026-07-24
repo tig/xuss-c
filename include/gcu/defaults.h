@@ -9,13 +9,19 @@
 
 /* Face timing (§4.2, §5.2 — wall-clock based). */
 #define GCU_WINK_PERIOD_MS 10000 /* right-eye wink cadence */
-#define GCU_WINK_CLOSE_MS 200    /* how long the eye stays closed */
+#define GCU_WINK_CLOSE_MS 320    /* how long the eye stays closed */
 
 /* Details refresh cadence (§4.5 — ~10 Hz visual). */
 #define GCU_DETAILS_REFRESH_MS 100
 
 /* Idle hair banner text (§4.2 — note the semicolon). */
 #define GCU_BANNER_TEXT "Xuss-C; built on ESP-IDF"
+
+/* Hair banner scroll speed (§4.2 — smooth right→left, wall-clock based). */
+#define GCU_BANNER_SPEED_PX_S 60
+
+/* UI animation frame pace (ms) for the living face loop. */
+#define GCU_UI_FRAME_MS 30
 
 /* Audio (§3 — unsigned 8-bit mono PCM; prefer 22050 Hz). */
 #define GCU_SAMPLE_RATE_HZ 22050

@@ -1,8 +1,11 @@
 #include "gcu/defaults.h"
 #include "gcu/domain.h"
+#include "gcu/face.h"
 #include "gcu/hal.h"
+#include "gcu/render.h"
 #include "gcu/version.h"
 #include "hal_board.h"
+#include "hal_display.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -90,6 +93,7 @@ void app_main(void) {
   /* HAL init must stay reachable from app_main (silico gate checks this).
    * Do not move the forever loop without gcu_make_board_hal + gcu_init (#79). */
   gcu_hal_t *hal = gcu_make_board_hal();
+  gcu_gfx_t *gfx = gcu_make_display();
 
   gcu_identity_line(id, (int)sizeof id);
   printf("%s\n", id);
@@ -110,11 +114,36 @@ void app_main(void) {
   }
 
   gcu_init(&st, hal);
+
+  /* Idle living face (§4.2). Time-based wink + banner scroll; regional paints.
+   * Buttons / music / Details land in later stages; this proves the panel. */
+  gcu_face_view_t view = {
+      .theme = GCU_THEME_BLUE,
+      .wink_closed = 0,
+      .banner_offset = 0,
+      .playing = 0,
+  };
+  int span = gcu_render_banner_span(2);
+  int last_wink = 0;
+  if (gfx) {
+    gcu_render_face(gfx, &view);
+  }
   for (;;) {
     drain_identity_command();
-    gcu_tick(&st);
+    long now = (hal && hal->now_ms) ? hal->now_ms(hal) : 0;
+    if (gfx) {
+      view.banner_offset = gcu_banner_offset(now, GCU_BANNER_SPEED_PX_S, span);
+      gcu_render_hair(gfx, &view);
+      int wc = gcu_wink_is_closed(now, GCU_DEFAULTS.wink_period_ms,
+                                  GCU_DEFAULTS.wink_close_ms);
+      if (wc != last_wink) {
+        view.wink_closed = wc;
+        gcu_render_eye(gfx, &view, 1);
+        last_wink = wc;
+      }
+    }
     if (hal && hal->delay_ms) {
-      hal->delay_ms(hal, gcu_tick_sleep_ms(&st));
+      hal->delay_ms(hal, GCU_UI_FRAME_MS);
     }
   }
 }

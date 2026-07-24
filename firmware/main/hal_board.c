@@ -4,6 +4,7 @@
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -21,6 +22,11 @@ static void set_led(gcu_hal_t *self, int on) {
 static void delay_ms(gcu_hal_t *self, int ms) {
   (void)self;
   vTaskDelay(pdMS_TO_TICKS(ms > 0 ? ms : 1));
+}
+
+static long now_ms(gcu_hal_t *self) {
+  (void)self;
+  return (long)(esp_timer_get_time() / 1000);
 }
 
 /*
@@ -90,6 +96,7 @@ static void play_pcm(gcu_hal_t *self, const unsigned char *pcm, int len,
 static gcu_hal_t board_hal = {
     .set_led = set_led,
     .delay_ms = delay_ms,
+    .now_ms = now_ms,
     .play_pcm = play_pcm,
 };
 
