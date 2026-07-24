@@ -132,6 +132,7 @@ void app_main(void) {
 
   gcu_screen_t last_screen = -1;   /* force first paint */
   gcu_theme_t last_theme = -1;
+  gcu_theme_t last_led_theme = -1;
   int last_playing = -1;
   int last_wink = 0;
   long last_details_ms = 0;
@@ -152,6 +153,17 @@ void app_main(void) {
       if (edges & (1 << 2)) {
         gcu_app_button(&app, GCU_BTN_C);
       }
+    }
+
+    /* Side LEDs follow the active theme; black forces them off (§4.3). */
+    if (hal && hal->set_leds && app.theme != last_led_theme) {
+      if (gcu_theme_leds_off(app.theme)) {
+        hal->set_leds(hal, 0, 0, 0);
+      } else {
+        gcu_rgb_t c = gcu_theme_face(app.theme);
+        hal->set_leds(hal, c.r, c.g, c.b);
+      }
+      last_led_theme = app.theme;
     }
 
     int playing = gcu_app_music_playing(&app);

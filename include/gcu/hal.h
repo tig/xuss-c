@@ -18,6 +18,8 @@ struct gcu_hal {
                   long *temp_mc);
   /* Free heap in bytes, or -1 if not tracked. */
   long (*free_heap)(gcu_hal_t *self);
+  /* Set all side LEDs to one RGB color (0,0,0 = off). NULL if no strip. */
+  void (*set_leds)(gcu_hal_t *self, int r, int g, int b);
   /* Play unsigned 8-bit mono PCM to the speaker, blocking until done.
    * NULL on backends without audio (e.g. host doubles). */
   void (*play_pcm)(gcu_hal_t *self, const unsigned char *pcm, int len,

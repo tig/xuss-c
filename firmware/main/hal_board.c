@@ -2,6 +2,7 @@
 #include "hal_board.h"
 #include "hal_imu.h"
 #include "hal_input.h"
+#include "hal_leds.h"
 
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
@@ -108,6 +109,7 @@ static gcu_hal_t board_hal = {
     .read_buttons = gcu_input_read,
     .read_imu = gcu_imu_read,
     .free_heap = free_heap,
+    .set_leds = gcu_leds_set,
     .play_pcm = play_pcm,
 };
 
@@ -116,5 +118,6 @@ gcu_hal_t *gcu_make_board_hal(void) {
   gpio_set_direction(GCU_LED_GPIO, GPIO_MODE_OUTPUT);
   gcu_input_init();
   gcu_imu_init();
+  gcu_leds_init();
   return &board_hal;
 }
