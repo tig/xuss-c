@@ -25,8 +25,19 @@ int main(void) {
   char id[64];
 
   /* Compiled use of shipped table (not a parallel literal table). */
-  if (GCU_DEFAULTS.tick_sleep_ms != GCU_TICK_SLEEP_MS) {
+  if (GCU_DEFAULTS.tick_sleep_ms != GCU_TICK_SLEEP_MS ||
+      GCU_DEFAULTS.wink_period_ms != GCU_WINK_PERIOD_MS ||
+      GCU_DEFAULTS.wink_close_ms != GCU_WINK_CLOSE_MS ||
+      GCU_DEFAULTS.details_refresh_ms != GCU_DETAILS_REFRESH_MS ||
+      GCU_DEFAULTS.sample_rate_hz != GCU_SAMPLE_RATE_HZ ||
+      GCU_DEFAULTS.volume != GCU_VOLUME_DEFAULT ||
+      GCU_DEFAULTS.mute != GCU_MUTE_DEFAULT) {
     fprintf(stderr, "defaults table mismatch\n");
+    return 1;
+  }
+  if (GCU_DEFAULTS.banner_text == NULL ||
+      strcmp(GCU_DEFAULTS.banner_text, GCU_BANNER_TEXT) != 0) {
+    fprintf(stderr, "banner default mismatch\n");
     return 1;
   }
 
