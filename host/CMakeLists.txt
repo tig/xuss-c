@@ -14,11 +14,12 @@ add_library(gcu_core
   ../src/protocol.c
   ../src/details.c
   ../src/render.c
+  ../src/input.c
 )
 target_include_directories(gcu_core PUBLIC ../include)
 
 # One test executable + ctest case per domain area (spec L0 coverage).
-set(GCU_HOST_TESTS defaults themes music face app protocol details render)
+set(GCU_HOST_TESTS defaults themes music face app protocol details render input)
 foreach(t IN LISTS GCU_HOST_TESTS)
   add_executable(test_${t} test_${t}.c)
   target_link_libraries(test_${t} gcu_core)

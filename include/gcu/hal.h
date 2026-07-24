@@ -10,6 +10,8 @@ struct gcu_hal {
   void (*delay_ms)(gcu_hal_t *self, int ms);
   /* Monotonic wall-clock milliseconds for time-based animation (§5.2). */
   long (*now_ms)(gcu_hal_t *self);
+  /* Read the front-button pressed mask (bit0=A, bit1=B, bit2=C; 1=pressed). */
+  int (*read_buttons)(gcu_hal_t *self);
   /* Play unsigned 8-bit mono PCM to the speaker, blocking until done.
    * NULL on backends without audio (e.g. host doubles). */
   void (*play_pcm)(gcu_hal_t *self, const unsigned char *pcm, int len,

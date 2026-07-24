@@ -1,5 +1,6 @@
 /* Device HAL backend — only TU allowlisted for device headers. */
 #include "hal_board.h"
+#include "hal_input.h"
 
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
@@ -97,11 +98,13 @@ static gcu_hal_t board_hal = {
     .set_led = set_led,
     .delay_ms = delay_ms,
     .now_ms = now_ms,
+    .read_buttons = gcu_input_read,
     .play_pcm = play_pcm,
 };
 
 gcu_hal_t *gcu_make_board_hal(void) {
   gpio_reset_pin(GCU_LED_GPIO);
   gpio_set_direction(GCU_LED_GPIO, GPIO_MODE_OUTPUT);
+  gcu_input_init();
   return &board_hal;
 }
