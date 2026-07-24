@@ -37,6 +37,9 @@ struct gcu_hal {
   void (*music_stop)(gcu_hal_t *self);
   long (*music_pos)(gcu_hal_t *self);
   int (*music_done)(gcu_hal_t *self);
+
+  /* Escape hatch (§7.1): hard-reset the board (used by the `reboot` command). */
+  void (*reboot)(gcu_hal_t *self);
 };
 
 #endif

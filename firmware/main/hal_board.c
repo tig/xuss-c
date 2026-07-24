@@ -10,6 +10,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -190,6 +191,11 @@ static int music_done(gcu_hal_t *self) {
   return s_audio_done;
 }
 
+static void board_reboot(gcu_hal_t *self) {
+  (void)self;
+  esp_restart();
+}
+
 static gcu_hal_t board_hal = {
     .set_led = set_led,
     .delay_ms = delay_ms,
@@ -203,6 +209,7 @@ static gcu_hal_t board_hal = {
     .music_stop = music_stop,
     .music_pos = music_pos,
     .music_done = music_done,
+    .reboot = board_reboot,
 };
 
 static void spiffs_mount(void) {

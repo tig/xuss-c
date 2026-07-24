@@ -5,6 +5,7 @@
 #include "gcu/face.h"
 #include "gcu/hal.h"
 #include "gcu/input.h"
+#include "gcu/protocol.h"
 #include "gcu/render.h"
 #include "gcu/version.h"
 #include "hal_board.h"
@@ -53,16 +54,29 @@ static void stdin_set_nonblocking(void) {
   }
 }
 
-static void drain_identity_command(void) {
-  static char line[48];
+/* Park all product outputs (§7.1 repl/reboot): stop the song and blank the
+ * side LEDs so the console is handed back in a quiet, host-serviceable state. */
+static void park_outputs(gcu_hal_t *hal) {
+  if (hal && hal->music_stop) {
+    hal->music_stop(hal);
+  }
+  if (hal && hal->set_leds) {
+    hal->set_leds(hal, 0, 0, 0);
+  }
+}
+
+/* Drain ready serial bytes and run each complete line through the product
+ * protocol (§7). Returns 1 if the caller should enter the parked/idle state
+ * (after `repl`); handles `reboot` in place. Never blocks the product face. */
+static int service_link(gcu_app_t *app, gcu_hal_t *hal) {
+  static char line[GCU_PROTO_MAX + 2];
   static int n;
   int c;
 
   if (!g_stdin_nonblock) {
-    return; /* never block the product face */
+    return 0; /* never block the product face */
   }
 
-  /* Drain only ready bytes; empty stdin yields EOF/EAGAIN immediately. */
   while ((c = getchar()) != EOF) {
     if (c == '\r' || c == '\n') {
       if (n > 0) {
@@ -71,26 +85,34 @@ static void drain_identity_command(void) {
         while (*p && isspace((unsigned char)*p)) {
           p++;
         }
-        if (strcmp(p, "identity") == 0) {
-          char id[64];
-          gcu_identity_line(id, (int)sizeof id);
-          printf("%s\n", id);
-          fflush(stdout);
-        }
+        char out[80];
+        gcu_proto_result_t r = gcu_protocol_handle(app, p, out, (int)sizeof out);
+        printf("%s\n", out);
+        fflush(stdout);
         n = 0;
+        if (r == GCU_PROTO_REPL) {
+          park_outputs(hal);
+          return 1;
+        }
+        if (r == GCU_PROTO_REBOOT) {
+          park_outputs(hal);
+          if (hal && hal->reboot) {
+            hal->reboot(hal);
+          }
+        }
       }
       continue;
     }
     if (n < (int)sizeof(line) - 1) {
       line[n++] = (char)c;
     } else {
-      n = 0; /* overflow: drop */
+      n = 0; /* overflow: drop (protocol also fails closed on overlong) */
     }
   }
-  /* Clear sticky errno from EAGAIN/EWOULDBLOCK after empty non-block read. */
   if (errno == EAGAIN || errno == EWOULDBLOCK) {
     errno = 0;
   }
+  return 0;
 }
 
 void app_main(void) {
@@ -142,7 +164,18 @@ void app_main(void) {
   long last_details_ms = 0;
 
   for (;;) {
-    drain_identity_command();
+    if (service_link(&app, hal)) {
+      /* repl: outputs parked, ownership released. Idle in a host-serviceable
+       * state — still answer serial so `reboot`/`identity` work (§7.1). */
+      for (;;) {
+        if (service_link(&app, hal)) {
+          /* stay parked */
+        }
+        if (hal && hal->delay_ms) {
+          hal->delay_ms(hal, GCU_UI_FRAME_MS);
+        }
+      }
+    }
     long now = (hal && hal->now_ms) ? hal->now_ms(hal) : 0;
 
     /* Input: sample + debounce -> app button edges (§4.3 one edge per press). */
