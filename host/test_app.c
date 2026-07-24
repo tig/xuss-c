@@ -26,15 +26,12 @@ int main(void) {
   CHECK(gcu_app_music_playing(&app));
   CHECK(app.screen == GCU_SCREEN_FACE);
 
-  /* A while playing pauses and does NOT advance the theme. */
+  /* A while playing cycles the theme and does NOT pause (operator deviation
+   * from spec §4.3/§4.6/§8, logged in the PR). */
   gcu_app_button(&app, GCU_BTN_A);
-  CHECK(!gcu_app_music_playing(&app));
-  CHECK(app.theme == GCU_THEME_ORANGE); /* unchanged */
+  CHECK(gcu_app_music_playing(&app)); /* still playing */
+  CHECK(app.theme == GCU_THEME_RED);  /* advanced */
   CHECK(app.screen == GCU_SCREEN_FACE);
-
-  /* B resumes from pause. */
-  gcu_app_button(&app, GCU_BTN_B);
-  CHECK(gcu_app_music_playing(&app));
 
   /* C opens Details WITHOUT pausing the music. */
   gcu_app_button(&app, GCU_BTN_C);
@@ -48,7 +45,7 @@ int main(void) {
   /* A on Details exits to face, theme unchanged, music unchanged. */
   gcu_app_button(&app, GCU_BTN_A);
   CHECK(app.screen == GCU_SCREEN_FACE);
-  CHECK(app.theme == GCU_THEME_ORANGE);
+  CHECK(app.theme == GCU_THEME_RED);
   CHECK(gcu_app_music_playing(&app));
 
   /* mute blocks a fresh start: pause to idle, set mute, B stays idle. */

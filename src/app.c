@@ -20,12 +20,12 @@ void gcu_app_button(gcu_app_t *app, gcu_button_t btn) {
 
   switch (btn) {
   case GCU_BTN_A:
-    /* Left: theme on face-when-not-playing; pause when playing; on Details it
-     * only exits to the face — never advances the theme (§4.3). */
+    /* Left: on Details, only exit to the face (never advances the theme). On
+     * the face, cycle the theme — including while music plays. NOTE: this is an
+     * operator-requested deviation from spec §4.3/§4.6/§8, which say A pauses
+     * while playing. Recorded in the PR ambiguity log. */
     if (app->screen == GCU_SCREEN_DETAILS) {
       app->screen = GCU_SCREEN_FACE; /* music state unchanged */
-    } else if (gcu_music_is_playing(&app->music)) {
-      gcu_music_press(&app->music, app->cfg.mute); /* pause, stay on face */
     } else {
       app->theme = gcu_theme_next(app->theme);
     }
