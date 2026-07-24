@@ -10,3 +10,6 @@ build/
 # overrides in firmware/sdkconfig.defaults instead).
 firmware/sdkconfig
 firmware/sdkconfig.old
+
+# Large generated full-song asset (regenerate via firmware/tools/make_song.sh)
+firmware/spiffs/*.u8

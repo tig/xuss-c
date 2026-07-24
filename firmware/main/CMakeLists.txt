@@ -7,3 +7,8 @@ idf_component_register(
   INCLUDE_DIRS "." "../../include"
   EMBED_FILES "first_riff.u8"
 )
+
+# Full-song asset: build a SPIFFS image from firmware/spiffs/ into the "storage"
+# partition and flash it with the project. Generate the payload first with
+# firmware/tools/make_song.sh (the .u8 is large and .gitignored).
+spiffs_create_partition_image(storage "${CMAKE_CURRENT_LIST_DIR}/../spiffs" FLASH_IN_PROJECT)

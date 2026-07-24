@@ -26,6 +26,9 @@
 extern const uint8_t first_riff_start[] asm("_binary_first_riff_u8_start");
 extern const uint8_t first_riff_end[] asm("_binary_first_riff_u8_end");
 
+/* Full-song asset lives in the SPIFFS "storage" partition (§4.4). */
+#define GCU_SONG_PATH "/spiffs/first.u8"
+
 /*
  * Identity on the link (#78 / #79): boot-print alone is not enough for
  * silico inspect after the greeting scrolls past. The app must also answer
@@ -135,6 +138,7 @@ void app_main(void) {
   gcu_theme_t last_led_theme = -1;
   int last_playing = -1;
   int last_wink = 0;
+  int hw_playing = 0; /* audio backend currently streaming */
   long last_details_ms = 0;
 
   for (;;) {
@@ -167,6 +171,29 @@ void app_main(void) {
     }
 
     int playing = gcu_app_music_playing(&app);
+
+    /* Music transport (§4.4): keep the audio backend in sync with the state
+     * machine. Start on entering PLAYING (from saved offset), stop + capture
+     * the resume offset on leaving it, and fold natural EOF back to idle. */
+    if (hal && hal->music_start) {
+      if (app.music.phase == GCU_MUSIC_PLAYING) {
+        if (!hw_playing) {
+          hal->music_start(hal, GCU_SONG_PATH, GCU_DEFAULTS.sample_rate_hz,
+                            app.music.offset);
+          hw_playing = 1;
+        } else if (hal->music_done && hal->music_done(hal)) {
+          gcu_music_end(&app.music); /* -> idle, offset 0, no repeat */
+          hal->music_stop(hal);
+          hw_playing = 0;
+          playing = 0;
+        }
+      } else if (hw_playing) {
+        app.music.offset = hal->music_pos ? hal->music_pos(hal) : 0;
+        hal->music_stop(hal);
+        hw_playing = 0;
+      }
+    }
+
     int mode_change = (app.screen != last_screen) ||
                       (app.screen == GCU_SCREEN_FACE && app.theme != last_theme);
 

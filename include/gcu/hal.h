@@ -24,6 +24,19 @@ struct gcu_hal {
    * NULL on backends without audio (e.g. host doubles). */
   void (*play_pcm)(gcu_hal_t *self, const unsigned char *pcm, int len,
                    int sample_rate_hz);
+
+  /* Streaming full-song playback (§4.4/§5). Non-blocking: a background task
+   * streams the file so UI/link keep running.
+   *   music_start: begin streaming `path` at `sample_rate_hz` from byte/sample
+   *                `start_sample` (u8 mono -> 1 byte == 1 sample).
+   *   music_stop:  stop the stream (pause/end); position frozen at music_pos.
+   *   music_pos:   samples consumed so far (resume offset).
+   *   music_done:  1 once the stream reached the natural end of file. */
+  void (*music_start)(gcu_hal_t *self, const char *path, int sample_rate_hz,
+                      long start_sample);
+  void (*music_stop)(gcu_hal_t *self);
+  long (*music_pos)(gcu_hal_t *self);
+  int (*music_done)(gcu_hal_t *self);
 };
 
 #endif

@@ -1,0 +1,7 @@
+# Xuss-C board config (M5GO Core v2.7 — 16 MB flash).
+# Custom partition table adds a 5 MB SPIFFS "storage" partition for the
+# full-song asset (First, ~4.3 MB u8 @ 22050 Hz mono).
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
