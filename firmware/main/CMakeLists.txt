@@ -4,4 +4,5 @@ idf_component_register(
        "../../src/themes.c" "../../src/music.c" "../../src/face.c"
        "../../src/app.c" "../../src/protocol.c" "../../src/details.c"
   INCLUDE_DIRS "." "../../include"
+  EMBED_FILES "first_riff.u8"
 )

@@ -7,9 +7,18 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+/*
+ * Boot riff asset (spec §4.1): a ~2.5s slice of "First" as unsigned 8-bit
+ * mono PCM @ 22050 Hz, embedded in the image (firmware/main/first_riff.u8,
+ * see EMBED_FILES). Played once at boot, after the identity print.
+ */
+extern const uint8_t first_riff_start[] asm("_binary_first_riff_u8_start");
+extern const uint8_t first_riff_end[] asm("_binary_first_riff_u8_end");
 
 /*
  * Identity on the link (#78 / #79): boot-print alone is not enough for
@@ -85,6 +94,13 @@ void app_main(void) {
   gcu_identity_line(id, (int)sizeof id);
   printf("%s\n", id);
   fflush(stdout);
+
+  /* Boot riff (§4.1): identity is printed first, then the riff plays once.
+   * Blocks ~2.5s at boot; concurrent audio+face is a §5 follow-on. */
+  if (hal && hal->play_pcm) {
+    int riff_len = (int)(first_riff_end - first_riff_start);
+    hal->play_pcm(hal, first_riff_start, riff_len, GCU_SAMPLE_RATE_HZ);
+  }
 
   stdin_set_nonblocking();
   if (!g_stdin_nonblock) {
