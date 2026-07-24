@@ -28,11 +28,11 @@
 #define BANNER_SCALE 2
 #define BANNER_GAP 40
 
-#define DET_TOP 24
-#define DET_ROW_H 22
+#define DET_TOP 22
+#define DET_ROW_H 16
 #define DET_LABEL_X 8
-#define DET_VALUE_X 150
-#define DET_SCALE 2
+#define DET_VALUE_X 96
+#define DET_SCALE 1
 
 int gcu_text_width(const char *s, int scale) {
   if (!s || scale < 1) {
@@ -190,8 +190,10 @@ void gcu_render_details_chrome(gcu_gfx_t *g, gcu_theme_t theme,
   gcu_rgb_t face = gcu_theme_face(theme);
   gcu_rgb_t bg = gcu_theme_bg(theme);
   g->fill_rect(g, 0, 0, W, H, bg); /* mode-change full clear */
+  g->text(g, DET_LABEL_X, 4, "DETAILS", 1, face, bg);
   if (id_line) {
-    g->text(g, DET_LABEL_X, 4, id_line, 2, face, bg);
+    g->text(g, W - gcu_text_width(id_line, 1) - DET_LABEL_X, 4, id_line, 1, face,
+            bg);
   }
   for (int i = 0; i < 5; i++) {
     int y = DET_TOP + (i + 1) * DET_ROW_H;

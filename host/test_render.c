@@ -108,7 +108,7 @@ int main(void) {
   memset(&d, 0, sizeof d);
   gcu_render_details_values(&r.gfx, GCU_THEME_BLUE, &d);
   CHECK(r.texts == 5);
-  CHECK(r.minx >= 150); /* value column only, labels untouched */
+  CHECK(r.minx >= 96); /* value column only, labels untouched */
 
   printf("OK render\n");
   return 0;
