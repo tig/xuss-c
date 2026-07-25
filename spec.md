@@ -1,6 +1,6 @@
 # Xuss-C Software Specification
 
-**Rev 0.3, July 2026**
+**Rev 0.4, July 2026**
 
 Xuss-C is a pocket companion for the M5Stack **M5GO IoT Starter Kit v2.7**. It boots with a short musical greeting, shows a living face on the screen, plays a full song on demand, and exposes a simple details screen for the sensors built into the M5GO core.
 
@@ -78,7 +78,7 @@ Press again after Black to return to Blue. The banner (hair) follows the color t
 
 Hold does not fast-forward: one press, one step.
 
-**While a song is playing**, the left button does **not** change colors. It **pauses** the music and leaves you on the face with the same theme as before.
+**While a song is playing**, the left button **still changes colors** — the music keeps playing while the look changes. To **pause**, use the **middle** button (see Music).
 
 ### Music (middle button)
 
@@ -96,7 +96,7 @@ Notes:
 - Playback is **sample audio** (not a square-wave beeper tone for music). Native C drives the speaker path with continuous buffered PCM so the track does not stutter while the face moves or the serial link answers.
 - Sound is still limited by the tiny M5GO speaker, but the digital path is built for clean desk listening: no intentional low-fidelity downsampling beyond what the speaker path requires, and no UI freezes to “make room” for audio.
 - You can open **Details** (right button) **while music is playing**; music keeps going in the background.
-- If you press **left** while music is playing, Xuss-C **pauses**, stays on the **face**, and does **not** change the color theme.
+- If you press **left** while music is playing, Xuss-C **changes the color theme** and keeps playing. Pausing is the **middle** button only.
 
 There is no volume knob on the front panel in this version. Volume is fixed at a comfortable desk level unless a technician changes it over the serial link (see the technical section).
 
@@ -226,6 +226,8 @@ First firmware flash is esptool (ESP32). Subsequent app updates use the project 
 
 Boot riff end must not click or hard-cut into silence; ease out cleanly.
 
+A brief (~2 s) riff that plays **before or while** the face becomes lively is the intended outcome; perfectly time-overlapped boot audio is **not** required, provided the identity line is emitted first and the riff ends cleanly.
+
 ### 4.2 Idle face
 
 - Eyes, smile, and theme colors on the IPS panel.
@@ -240,6 +242,8 @@ Face animation timing is wall-clock based, never "tick count" based. Prefer regi
 
 **Glyph set:** every on-screen string the product shows (banner, labels, firmware version, sensor values, song title) must render with a font that includes at least space, `0–9`, `+`, `-`, `.`, and the letters used in product copy. Missing glyphs that draw as solid blocks are a product defect.
 
+The bottom button **hints** (color / play-or-pause / gear) are **symbols**, not text: they only need to be clearly recognizable at a glance and are **not** held to the text-font glyph requirement above — simple drawn shapes are acceptable.
+
 ### 4.3 Themes (Button A)
 
 Cycle order is fixed:
@@ -248,15 +252,19 @@ Cycle order is fixed:
 
 One edge per press (debounce). Themes retint face, hair bar, banner ink, and side LEDs together.
 
+The **black** theme is a special case: it forces the side LEDs **fully off** and inverts the face to **black features on a white background** (all other themes use a colored face on a dark background).
+
 | Context | Button A |
 |---|---|
 | Face (not playing) | Next theme |
-| Full-song **playing** | **Pause**, remain on **face**, **do not** advance theme |
+| Full-song **playing** | **Next theme** — music keeps playing and the face remains the primary view. A does **not** pause. |
 | Details | Exit to face, **do not** advance theme (music state unchanged) |
+
+Pausing is exclusively **Button B**. Button A never pauses: on the face it cycles themes (idle or playing), and on Details it exits to the face.
 
 ### 4.4 Music (Button B)
 
-Full-track asset: entire *First* as unsigned 8-bit mono PCM at the project sample rate, **streamed from on-device storage** (not held entirely in RAM). Deploy must place the file on the device filesystem (or embedded partition) and **verify non-zero size**. If the file is missing or empty, refuse playback with a clear link status (and do not hang the UI).
+Full-track asset: entire *First* as unsigned 8-bit mono PCM at the project sample rate, **streamed from on-device storage** (not held entirely in RAM). Deploy must place the file on the device filesystem (or embedded partition) and **verify non-zero size**. If the file is missing or empty, refuse playback with a clear link status. The **face stays fully live and usable** — banner, wink, themes (Button A), and Details (Button C) all keep working; the product simply does not start music. A silent no-op on the face (no on-screen error) is acceptable.
 
 State machine:
 
@@ -282,7 +290,7 @@ When not actively playing (paused, finished, or error), restore non-playing chro
 
 - From face (idle, paused, **or playing**): open Details **immediately**. Do **not** force a pause.
 - While Details is already visible: Button C is a **no-op**.
-- Details shows firmware identity at the top and live built-in sensor values beneath.
+- Details shows firmware identity at the top and live built-in sensor values beneath. Identity and values must be **readable at normal desk viewing distance** (a soft requirement): a technically-correct but unreadably-small Details screen does not meet intent.
 - Sensor values refresh every **100 ms** (~10 Hz) as a **visual** rate. Labels and chrome are stable; only value fields update (partial screen update, not a full-panel flash every sample).
 - Required readings when hardware is present: IMU acceleration, rotation rate, IMU temperature; front button levels; optional core extras (e.g. free memory) if cheap to obtain.
 - Music state is independent: play/pause/resume from Details follows §4.4; leaving Details via Button A does not change play/pause.
@@ -291,7 +299,7 @@ When not actively playing (paused, finished, or error), restore non-playing chro
 
 | Button | Face (idle/paused) | Playing (face + cue) | Details |
 |---|---|---|---|
-| A (left) | Next theme | Pause → face, **no** theme change | Exit to face, no theme change |
+| A (left) | Next theme | Next theme (music continues) | Exit to face, no theme change |
 | B (middle) | Play / resume | Pause | Play / pause / resume (same rules) |
 | C (right) | Open Details | Open Details (**music continues**) | No-op |
 
@@ -313,7 +321,7 @@ The product simultaneously owns these concerns:
 
 1. **Concurrent ownership.** Use FreeRTOS tasks (or an equivalent structured concurrency model on ESP-IDF) so audio production is not starved by UI and UI is not starved by audio. A cooperative main loop is acceptable only if it is **proven** to meet the acceptance sketch below with continuous PCM and living face motion; “eventually services buttons after the track” is not enough.
 2. **No monopoly on long audio.** Full-song PCM must **never** block:
-   - Button A (pause → face, no theme change), Button B (pause), and Button C (open Details **without** pause);
+   - Button A (next theme, music continues), Button B (pause), and Button C (open Details **without** pause);
    - face wink and banner motion on wall-clock schedule;
    - Details value refresh when Details is visible;
    - **USB serial** so `identity`, `repl`, and `reboot` work **while the song is playing**. Bounded intake/egress per service turn is fine; multi-minute deafness to the link is not.
@@ -328,7 +336,7 @@ The product simultaneously owns these concerns:
 | Check | Pass when |
 |---|---|
 | Pause while playing | Middle button pauses within a short, human-noticeable delay mid-track |
-| A while playing | Left button pauses, shows face, theme index unchanged |
+| A while playing | Left button advances the theme and stays on the face; music keeps playing (A does not pause) |
 | Details while playing | Right button opens Details **without** stopping music; song continues audibly |
 | Living face while playing | Wink and/or banner motion visible mid-track without pausing |
 | Link while playing | `identity` and `repl` succeed mid-track without requiring a prior pause |
@@ -380,7 +388,7 @@ Config persistence, if present, must fall back safely when the on-device image i
 | Play / pause / resume | B starts full track; B pauses mid-song; B resumes (not restart); end does not loop | L1 |
 | Living face while playing | Mid-track, wink and/or banner still move; title **First by Tig** is visible as playing cue | L1 |
 | Clean audio mid-UI | Full track plays without regular stutter while face animates | L1 |
-| A while playing | A pauses and returns to / stays on face; theme index unchanged | L1 |
+| A while playing | A advances the theme and stays on the face; music keeps playing (A does not pause) | L1 |
 | Details | C opens sensor screen with firmware line (readable digits); values move when tilted; ~100 ms updates without full-screen flash | L1 |
 | Details while playing | C opens Details **without** pausing; music continues | L1 |
 | Wink paint | Idle wink changes only the right eye; rest of the face does not flash | L1 |
