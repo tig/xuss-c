@@ -64,7 +64,7 @@ Every **ten seconds**, the right eye gives a short wink.
 
 ### Colors (left button)
 
-Press the **left button** (Button A) to cycle the look of the face and the side lights **when you are on the face (not playing music)**:
+Press the **left button** (Button A) to cycle the look of the face and the side lights **when you are on the face — including while music is playing**:
 
 | Step | Name | What you see |
 |---|---|---|
@@ -185,7 +185,7 @@ Rebuild the experience in the User's Manual on an M5GO v2.7 in **C on ESP-IDF**,
 | Multitasking model | Cooperative single loop with yield rules | Concurrent concerns (RTOS tasks or equivalent); audio never freezes UI or link |
 | Escape hatch `repl` | MicroPython prompt | Park outputs; return a flashable USB-console state (no MicroPython) |
 
-**Not product requirements for Rev 0.3** (do not reintroduce as the product):
+**Not product requirements for this revision** (do not reintroduce as the product):
 
 - ANGLE-knob live RPM, PIR greet, edge/tach profiles (`sing` / `run`), Grove modules on Details, multi-track library, bench-instrument dead-man rails
 
@@ -208,7 +208,7 @@ M5Stack **M5GO IoT Starter Kit v2.7**. No soldering. No required external units.
 | Ten side RGB LEDs | Theme-matched side light |
 | Side red power button (+ battery base) | On/off on battery: single-click on, quick double-click off (M5GO / Core v2.7). USB power keeps the unit on. |
 
-Use only **built-in** sensors on the Details screen (IMU on the internal bus, front buttons, and other core-only readings such as heap free). Do not depend on Port A/B/C modules for Rev 0.3 product behavior.
+Use only **built-in** sensors on the Details screen (IMU on the internal bus, front buttons, and other core-only readings such as heap free). Do not depend on Port A/B/C modules for product behavior in this revision.
 
 Power is **hardware-owned** by the M5GO power path (not an Xuss-C software feature). Product firmware must not fight the power button or require a long-press convention that this board does not implement.
 
@@ -353,7 +353,7 @@ The product simultaneously owns these concerns:
 
 ## 7. Protocol and parameters (canonical allow-list)
 
-ASCII line protocol on USB serial. **This is the complete product command surface for Rev 0.3.** Do not reintroduce instrument verbs as product requirements.
+ASCII line protocol on USB serial. **This is the complete product command surface for this revision.** Do not reintroduce instrument verbs as product requirements.
 
 ### 7.1 Required commands
 
@@ -374,7 +374,7 @@ ASCII line protocol on USB serial. **This is the complete product command surfac
 
 ### 7.3 Not product requirements
 
-Do **not** require for Rev 0.3: `rpm`, `route`, `sing`, `run`, `stop` (as instrument), `knob`, `greet`, `ring_teeth`, named engine profiles, or ANGLE/PIR units.
+Do **not** require for this revision: `rpm`, `route`, `sing`, `run`, `stop` (as instrument), `knob`, `greet`, `ring_teeth`, named engine profiles, or ANGLE/PIR units.
 
 Config persistence, if present, must fall back safely when the on-device image is torn or alien.
 
