@@ -10,7 +10,9 @@ This repository is a product example used with [Silico](https://github.com/tig/s
 
 ## Status
 
-**Spec only.** [spec.md](spec.md) is the product contract (Rev 0.3). No firmware or host layout is checked in yet.
+**Metal product face (first ship).** Host gate green; `fw_name=XUSSC fw_version=0.0.1` on the link; boot riff, living face (banner + wink), and theme-matched side LEDs observed on M5GO. Full-track SPIFFS stream and live IMU Details still open under `spec.md` L1.
+
+Contract: [spec.md](spec.md) (Rev 0.3). Host path: [install/README.md](install/README.md).
 
 ## Hardware
 
@@ -18,6 +20,25 @@ This repository is a product example used with [Silico](https://github.com/tig/s
 - USB power / data cable
 
 No extra modules are required for the features in the spec.
+
+## Host gate
+
+```text
+# Windows: activate ESP-IDF for cmake/ninja, prefer host MinGW gcc over esp-clang
+cmake -S host -B build/host -G Ninja -DCMAKE_C_COMPILER=gcc
+cmake --build build/host --target host_test
+silico gate
+silico product-path
+```
+
+## Deploy
+
+```text
+silico inspect --port COMx
+silico deploy --port COMx --yes --verify --reset
+```
+
+After flash the board plays a short boot riff (~2.5 s of *First*) and shows the face.
 
 ## Clean start (maintainers)
 

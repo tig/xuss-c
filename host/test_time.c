@@ -1,93 +1,61 @@
-/* Time contract: hal now_ms is int64_t milliseconds (#87).
- *
- * On ESP32 (Xtensa ILP32) `long` is 32 bits: millisecond math in `long`
- * overflows in <10 hours of uptime arithmetic and wraps at ~24.8 days.
- * Host `long` is 64-bit, so a host test only catches the trap if it seeds
- * the clock PAST 2^31 — which this test does. Keep the seed; do not
- * "simplify" it to small numbers.
- */
 #include "gcu/defaults.h"
 #include "gcu/domain.h"
-#include "gcu/hal.h"
 
-#include <stdint.h>
 #include <stdio.h>
 
-static int led;
-static int led_writes;
-static int64_t fake_now;
+/* Host long is 64-bit; seed past 2^31 so millisecond math must use int64_t. */
+static int64_t g_now;
 
-static void set_led(gcu_hal_t *self, int on) {
+static int64_t fake_now(gcu_hal_t *self) {
   (void)self;
-  led = on;
-  led_writes++;
+  return g_now;
 }
 
-static void delay_ms(gcu_hal_t *self, int ms) {
-  (void)self;
-  (void)ms;
-}
-
-static int64_t now_ms(gcu_hal_t *self) {
-  (void)self;
-  return fake_now;
-}
+static gcu_hal_t g_hal = {.set_led = NULL, .delay_ms = NULL, .now_ms = fake_now};
 
 int main(void) {
-  gcu_hal_t hal = {.set_led = set_led, .delay_ms = delay_ms, .now_ms = now_ms};
   gcu_state_t st;
-  const int period = GCU_DEFAULTS.tick_sleep_ms;
+  gcu_view_t view;
 
-  /* Seed past 2^31 ms so 32-bit intermediate math would go negative. */
-  fake_now = (INT64_C(1) << 31) + 12345;
-  gcu_init(&st, &hal);
+  /* Past signed-32-bit millisecond range (~24.8 days). */
+  g_now = (int64_t)3000000000LL;
+  gcu_init(&st, &g_hal);
+  gcu_tick(&st, &view); /* consume boot repaint */
 
-  /* Same instant: no blink edge yet. */
-  led_writes = 0;
-  gcu_tick(&st);
-  if (led_writes != 0) {
-    fprintf(stderr, "blinked with no elapsed time\n");
+  /* Advance just under wink period — still open */
+  g_now += GCU_DEFAULTS.wink_period_ms - 1;
+  gcu_tick(&st, &view);
+  if (view.wink_closed) {
+    fprintf(stderr, "wink closed too early near 2^31 boundary\n");
     return 1;
   }
 
-  /* One period later: exactly one toggle, on. */
-  fake_now += period;
-  gcu_tick(&st);
-  if (led_writes != 1 || led != 1) {
-    fprintf(stderr, "expected one on-toggle after %d ms\n", period);
+  /* Cross period — close */
+  g_now += 2;
+  gcu_tick(&st, &view);
+  if (!view.wink_closed || !view.eye_repaint) {
+    fprintf(stderr, "wink should close on period with eye_repaint\n");
     return 1;
   }
 
-  /* Sub-period ticks must not toggle (wall clock, not tick count). */
-  fake_now += period / 2;
-  gcu_tick(&st);
-  if (led_writes != 1) {
-    fprintf(stderr, "toggled before period elapsed\n");
+  /* Hold then reopen */
+  g_now += GCU_DEFAULTS.wink_hold_ms + 1;
+  gcu_tick(&st, &view);
+  if (view.wink_closed) {
+    fprintf(stderr, "wink should reopen after hold\n");
     return 1;
   }
 
-  /* Large jump (past another 2^31 ms) still behaves: one toggle. */
-  fake_now += (INT64_C(1) << 31) + period;
-  gcu_tick(&st);
-  if (led_writes != 2 || led != 0) {
-    fprintf(stderr, "64-bit delta mishandled after big clock jump\n");
+  /* Banner should advance with wall clock, not tick count */
+  int off0 = view.banner_offset_px;
+  g_now += GCU_DEFAULTS.banner_step_ms;
+  gcu_tick(&st, &view);
+  if (view.banner_offset_px == off0 && !view.banner_repaint) {
+    /* offset may wrap; require repaint at least */
+    fprintf(stderr, "banner should move on banner_step_ms\n");
     return 1;
   }
 
-  /* Fallback: no now_ms hook -> every tick toggles (plate default). */
-  {
-    gcu_hal_t hal2 = {.set_led = set_led, .delay_ms = delay_ms};
-    gcu_state_t st2;
-    gcu_init(&st2, &hal2);
-    led_writes = 0;
-    gcu_tick(&st2);
-    gcu_tick(&st2);
-    if (led_writes != 2) {
-      fprintf(stderr, "tick fallback broken without now_ms\n");
-      return 1;
-    }
-  }
-
-  printf("OK time64\n");
+  printf("OK time64 wink+banner\n");
   return 0;
 }

@@ -1,0 +1,6 @@
+## Managed components for M5GO product face (ILI9342C + SK6812).
+dependencies:
+  idf:
+    version: ">=5.0"
+  espressif/led_strip: "^2.5.5"
+  esp_lcd_ili9341: "^2.0.0"

@@ -5,3 +5,15 @@ __pycache__/
 .pytest_cache/
 build/
 *.pyc
+
+# ESP-IDF
+managed_components/
+dependencies.lock
+firmware/build/
+build/
+firmware/sdkconfig.old
+
+
+# Generated audio (rebuild from First.mp3)
+assets/*.pcm
+
