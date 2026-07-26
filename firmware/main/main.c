@@ -32,6 +32,7 @@ void app_main(void) {
   for (;;) {
     board_service_serial(&st);
     board_poll_buttons(&st);
+    board_poll_domain_events(&st);
     gcu_tick(&st, &view);
     board_apply_view(&view, &st);
     if (hal && hal->delay_ms) {

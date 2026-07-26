@@ -10,6 +10,7 @@ gcu_hal_t *gcu_make_board_hal(void);
 void board_init(void);
 void board_apply_view(const gcu_view_t *view, const gcu_state_t *st);
 void board_poll_buttons(gcu_state_t *st);
+void board_poll_domain_events(gcu_state_t *st);
 void board_service_serial(gcu_state_t *st);
 void board_park_outputs(void);
 void board_hard_reset(void);
