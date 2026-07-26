@@ -46,14 +46,22 @@ int main(void) {
     return 1;
   }
 
-  /* Banner should advance with wall clock, not tick count */
+  /* Banner moves right→left (offset decreases) on wall clock, not tick count */
   int off0 = view.banner_offset_px;
   g_now += GCU_DEFAULTS.banner_step_ms;
   gcu_tick(&st, &view);
-  if (view.banner_offset_px == off0 && !view.banner_repaint) {
-    /* offset may wrap; require repaint at least */
-    fprintf(stderr, "banner should move on banner_step_ms\n");
+  if (!view.banner_repaint) {
+    fprintf(stderr, "banner should repaint on banner_step_ms\n");
     return 1;
+  }
+  if (view.banner_offset_px >= off0 &&
+      !(off0 < 0 && view.banner_offset_px > 0)) {
+    /* Allow wrap: large positive after going fully off the left edge. */
+    if (view.banner_offset_px != GCU_DEFAULTS.display_w || off0 >= 0) {
+      fprintf(stderr, "banner should move right→left (off %d → %d)\n", off0,
+              view.banner_offset_px);
+      return 1;
+    }
   }
 
   printf("OK time64 wink+banner\n");

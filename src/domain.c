@@ -55,13 +55,16 @@ void gcu_tick(gcu_state_t *st, gcu_view_t *out) {
     now = st->hal->now_ms(st->hal);
   }
 
-  /* Banner scroll on face (and while playing). Details freezes banner. */
+  /* Banner scroll on face (and while playing). Details freezes banner.
+   * Spec: hair scrolls right → left (text x decreases each step). */
   if (st->screen == GCU_SCREEN_FACE) {
     if (now - st->last_banner_ms >= (int64_t)GCU_DEFAULTS.banner_step_ms) {
       st->last_banner_ms = now;
-      st->banner_offset_px += 1;
-      if (st->banner_offset_px > GCU_DEFAULTS.display_w) {
-        st->banner_offset_px = -((int)strlen(GCU_BANNER_TEXT) * 8);
+      /* scale-2 5x7: 6 px advance * 2 = 12 px per character on metal. */
+      const int text_w = (int)strlen(GCU_BANNER_TEXT) * 12;
+      st->banner_offset_px -= 1;
+      if (st->banner_offset_px + text_w < 0) {
+        st->banner_offset_px = GCU_DEFAULTS.display_w;
       }
       st->banner_repaint = 1;
     }
