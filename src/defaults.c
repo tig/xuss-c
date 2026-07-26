@@ -18,27 +18,27 @@ const gcu_defaults_t GCU_DEFAULTS = {
     .pin_btn_c = GCU_PIN_BTN_C,
 };
 
-/* Logical RGB — panel pack + SK6812 share these triples after measure. */
+/* Logical RGB — same triples for IPS face and SK6812 sides (after pack fix). */
 const gcu_theme_t GCU_THEMES[GCU_THEME_COUNT] = {
-    /* blue (default) */
-    {.face = {40, 140, 255},
-     .bg = {8, 16, 48},
-     .banner_ink = {200, 230, 255},
+    /* blue (default) — strong primary for LED/panel match checks */
+    {.face = {0, 96, 255},
+     .bg = {0, 16, 48},
+     .banner_ink = {180, 220, 255},
      .sides_on = 1},
     /* orange */
-    {.face = {255, 140, 40},
-     .bg = {40, 20, 8},
-     .banner_ink = {255, 220, 180},
+    {.face = {255, 128, 0},
+     .bg = {40, 16, 0},
+     .banner_ink = {255, 210, 160},
      .sides_on = 1},
     /* red */
-    {.face = {255, 48, 48},
-     .bg = {40, 8, 8},
-     .banner_ink = {255, 200, 200},
+    {.face = {255, 0, 0},
+     .bg = {40, 0, 0},
+     .banner_ink = {255, 180, 180},
      .sides_on = 1},
     /* green */
-    {.face = {48, 220, 96},
-     .bg = {8, 32, 16},
-     .banner_ink = {200, 255, 210},
+    {.face = {0, 220, 64},
+     .bg = {0, 32, 8},
+     .banner_ink = {180, 255, 200},
      .sides_on = 1},
     /* black: black face on white bg; sides off */
     {.face = {0, 0, 0},

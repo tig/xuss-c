@@ -76,9 +76,20 @@ static int s_imu_ok;
 static int64_t s_last_details_ms;
 static int s_spiffs_ok;
 
-/* Measured M5GO IPS pack: R/B swapped into 565 word (see esp32-lcd-ips). */
+/*
+ * Logical RGB → panel pixel.
+ *
+ * Side SK6812s take the same logical (r,g,b) via led_strip_set_pixel (driver
+ * packs GRB on the wire). Panel path must match those primaries.
+ *
+ * MADCTL BGR is set via LCD_RGB_ELEMENT_ORDER_BGR — do NOT also R↔B in the
+ * 565 pack (double-swap makes screen disagree with the side strips).
+ * SPI wants big-endian 565 words; ESP32 is LE so swap bytes for DMA.
+ */
 static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
-  return (uint16_t)(((b & 0xF8) << 8) | ((g & 0xFC) << 3) | (r >> 3));
+  uint16_t c =
+      (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3));
+  return (uint16_t)((c >> 8) | (c << 8));
 }
 
 static void set_led_stub(gcu_hal_t *self, int on) {
