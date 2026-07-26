@@ -72,9 +72,12 @@ static int s_btn_last[3] = {1, 1, 1};
 static int64_t s_btn_edge_ms[3];
 static uint16_t *s_linebuf;
 static int s_linebuf_w;
+static uint16_t *s_strip_fb; /* hair or hint strip: W * strip_h DMA pixels */
+static int s_strip_fb_h;
 static int s_imu_ok;
 static int64_t s_last_details_ms;
 static int s_spiffs_ok;
+static int s_last_music_for_hints = -1;
 
 /*
  * Logical RGB → panel pixel.
@@ -107,6 +110,44 @@ static int64_t now_ms(gcu_hal_t *self) {
   return esp_timer_get_time() / 1000;
 }
 
+static int ensure_linebuf(int w) {
+  if (w <= 0) {
+    return 0;
+  }
+  if (!s_linebuf || s_linebuf_w < w) {
+    if (s_linebuf) {
+      free(s_linebuf);
+    }
+    s_linebuf = (uint16_t *)heap_caps_malloc((size_t)w * sizeof(uint16_t),
+                                             MALLOC_CAP_DMA);
+    s_linebuf_w = s_linebuf ? w : 0;
+  }
+  return s_linebuf != NULL;
+}
+
+static int ensure_strip_fb(int h) {
+  if (h <= 0) {
+    return 0;
+  }
+  if (!s_strip_fb || s_strip_fb_h < h) {
+    if (s_strip_fb) {
+      free(s_strip_fb);
+    }
+    size_t n = (size_t)GCU_DISPLAY_W * (size_t)h;
+    s_strip_fb =
+        (uint16_t *)heap_caps_malloc(n * sizeof(uint16_t), MALLOC_CAP_DMA);
+    s_strip_fb_h = s_strip_fb ? h : 0;
+  }
+  return s_strip_fb != NULL;
+}
+
+static void blit_bitmap(int x, int y, int w, int h, const uint16_t *px) {
+  if (!s_panel || !px || w <= 0 || h <= 0) {
+    return;
+  }
+  esp_lcd_panel_draw_bitmap(s_panel, x, y, x + w, y + h, px);
+}
+
 static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   if (!s_panel || w <= 0 || h <= 0) {
     return;
@@ -125,36 +166,87 @@ static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   if (y + h > GCU_DISPLAY_H) {
     h = GCU_DISPLAY_H - y;
   }
-  if (w <= 0 || h <= 0) {
-    return;
-  }
-  if (!s_linebuf || s_linebuf_w < w) {
-    if (s_linebuf) {
-      free(s_linebuf);
-    }
-    s_linebuf = (uint16_t *)heap_caps_malloc((size_t)w * sizeof(uint16_t),
-                                             MALLOC_CAP_DMA);
-    s_linebuf_w = w;
-  }
-  if (!s_linebuf) {
+  if (w <= 0 || h <= 0 || !ensure_linebuf(w)) {
     return;
   }
   for (int i = 0; i < w; i++) {
     s_linebuf[i] = color;
   }
+  /* Batch solid rows through one-line DMA buffer (still solid, not per-pixel). */
   for (int row = 0; row < h; row++) {
-    esp_lcd_panel_draw_bitmap(s_panel, x, y + row, x + w, y + row + 1,
-                              s_linebuf);
+    blit_bitmap(x, y + row, w, 1, s_linebuf);
   }
 }
 
-static void draw_char(int x, int y, char c, uint16_t fg, uint16_t bg, int scale) {
+/* Compose 5x7 glyph into a strip framebuffer (stride = GCU_DISPLAY_W). */
+static void fb_draw_char(uint16_t *fb, int fb_h, int x, int y, char c,
+                         uint16_t fg, uint16_t bg, int scale) {
   const uint8_t *g = font5x7_glyph(c);
   for (int col = 0; col < 5; col++) {
     uint8_t bits = g[col];
     for (int row = 0; row < 7; row++) {
       uint16_t color = (bits & (1u << row)) ? fg : bg;
-      fill_rect(x + col * scale, y + row * scale, scale, scale, color);
+      for (int sy = 0; sy < scale; sy++) {
+        int py = y + row * scale + sy;
+        if (py < 0 || py >= fb_h) {
+          continue;
+        }
+        for (int sx = 0; sx < scale; sx++) {
+          int px = x + col * scale + sx;
+          if (px < 0 || px >= GCU_DISPLAY_W) {
+            continue;
+          }
+          fb[py * GCU_DISPLAY_W + px] = color;
+        }
+      }
+    }
+  }
+}
+
+static void fb_draw_text(uint16_t *fb, int fb_h, int x, int y, const char *s,
+                         uint16_t fg, uint16_t bg, int scale) {
+  if (!s || !fb) {
+    return;
+  }
+  int cx = x;
+  while (*s) {
+    fb_draw_char(fb, fb_h, cx, y, *s, fg, bg, scale);
+    cx += 6 * scale;
+    s++;
+  }
+}
+
+/* Direct panel text: compose one glyph row-run into linebuf (faster than pixels). */
+static void draw_char(int x, int y, char c, uint16_t fg, uint16_t bg, int scale) {
+  const uint8_t *g = font5x7_glyph(c);
+  int gw = 5 * scale;
+  if (!ensure_linebuf(gw > 0 ? gw : 1)) {
+    return;
+  }
+  for (int row = 0; row < 7; row++) {
+    for (int sy = 0; sy < scale; sy++) {
+      for (int col = 0; col < 5; col++) {
+        uint16_t color = (g[col] & (1u << row)) ? fg : bg;
+        for (int sx = 0; sx < scale; sx++) {
+          s_linebuf[col * scale + sx] = color;
+        }
+      }
+      int py = y + row * scale + sy;
+      if (py >= 0 && py < GCU_DISPLAY_H && x < GCU_DISPLAY_W) {
+        int draw_w = gw;
+        int draw_x = x;
+        if (draw_x < 0) {
+          draw_w += draw_x;
+          draw_x = 0;
+        }
+        if (draw_x + draw_w > GCU_DISPLAY_W) {
+          draw_w = GCU_DISPLAY_W - draw_x;
+        }
+        if (draw_w > 0) {
+          blit_bitmap(draw_x, py, draw_w, 1,
+                      s_linebuf + (draw_x > x ? (draw_x - x) : 0));
+        }
+      }
     }
   }
 }
@@ -166,17 +258,124 @@ static void draw_text(int x, int y, const char *s, uint16_t fg, uint16_t bg,
   }
   int cx = x;
   while (*s) {
-    draw_char(cx, y, *s, fg, bg, scale);
+    if (cx + 6 * scale > 0 && cx < GCU_DISPLAY_W) {
+      draw_char(cx, y, *s, fg, bg, scale);
+    }
     cx += 6 * scale;
     s++;
   }
 }
 
+/*
+ * Spec § face hints: left "color" text; middle play/pause *symbol*;
+ * right gear *symbol* — not the words "play"/"pause"/"gear".
+ */
+static void fb_icon_play(uint16_t *fb, int fb_h, int cx, int cy, uint16_t fg) {
+  /* Right-pointing triangle ~12x12. */
+  for (int y = -6; y <= 6; y++) {
+    int half = (6 - (y < 0 ? -y : y));
+    if (half < 1) {
+      half = 1;
+    }
+    for (int x = -2; x <= half; x++) {
+      int px = cx + x;
+      int py = cy + y;
+      if (px >= 0 && px < GCU_DISPLAY_W && py >= 0 && py < fb_h) {
+        fb[py * GCU_DISPLAY_W + px] = fg;
+      }
+    }
+  }
+}
+
+static void fb_icon_pause(uint16_t *fb, int fb_h, int cx, int cy, uint16_t fg) {
+  for (int y = -6; y <= 6; y++) {
+    for (int x = -6; x <= -3; x++) {
+      int px = cx + x;
+      int py = cy + y;
+      if (px >= 0 && px < GCU_DISPLAY_W && py >= 0 && py < fb_h) {
+        fb[py * GCU_DISPLAY_W + px] = fg;
+      }
+    }
+    for (int x = 3; x <= 6; x++) {
+      int px = cx + x;
+      int py = cy + y;
+      if (px >= 0 && px < GCU_DISPLAY_W && py >= 0 && py < fb_h) {
+        fb[py * GCU_DISPLAY_W + px] = fg;
+      }
+    }
+  }
+}
+
+static void fb_icon_gear(uint16_t *fb, int fb_h, int cx, int cy, uint16_t fg) {
+  /* Simple gear: outer ring + four notches + hub. */
+  for (int y = -7; y <= 7; y++) {
+    for (int x = -7; x <= 7; x++) {
+      int r2 = x * x + y * y;
+      int on = 0;
+      if (r2 >= 16 && r2 <= 49) {
+        on = 1;
+      }
+      /* teeth on axes */
+      if ((x >= -2 && x <= 2 && y >= -8 && y <= 8) ||
+          (y >= -2 && y <= 2 && x >= -8 && x <= 8)) {
+        if (r2 <= 64 && r2 >= 25) {
+          on = 1;
+        }
+      }
+      if (r2 <= 6) {
+        on = 1; /* hub */
+      }
+      if (on) {
+        int px = cx + x;
+        int py = cy + y;
+        if (px >= 0 && px < GCU_DISPLAY_W && py >= 0 && py < fb_h) {
+          fb[py * GCU_DISPLAY_W + px] = fg;
+        }
+      }
+    }
+  }
+}
+
+/* Spec: hair-bar only; compose in RAM → one SPI blit (smooth scroll). */
 static void draw_banner(const gcu_view_t *view, const gcu_theme_t *th) {
   uint16_t bg = rgb565(th->bg.r, th->bg.g, th->bg.b);
   uint16_t ink = rgb565(th->banner_ink.r, th->banner_ink.g, th->banner_ink.b);
-  fill_rect(0, 0, GCU_DISPLAY_W, HAIR_H, bg);
-  draw_text(view->banner_offset_px, 4, GCU_BANNER_TEXT, ink, bg, 2);
+  if (!ensure_strip_fb(HAIR_H)) {
+    return;
+  }
+  size_t n = (size_t)GCU_DISPLAY_W * (size_t)HAIR_H;
+  for (size_t i = 0; i < n; i++) {
+    s_strip_fb[i] = bg;
+  }
+  /* scale 2; vertical center-ish at y=2 */
+  fb_draw_text(s_strip_fb, HAIR_H, view->banner_offset_px, 2, GCU_BANNER_TEXT,
+               ink, bg, 2);
+  blit_bitmap(0, 0, GCU_DISPLAY_W, HAIR_H, s_strip_fb);
+}
+
+static void draw_button_hints(const gcu_view_t *view, const gcu_theme_t *th) {
+  uint16_t bg = rgb565(th->bg.r, th->bg.g, th->bg.b);
+  uint16_t ink = rgb565(th->banner_ink.r, th->banner_ink.g, th->banner_ink.b);
+  if (!ensure_strip_fb(HINT_H)) {
+    return;
+  }
+  size_t n = (size_t)GCU_DISPLAY_W * (size_t)HINT_H;
+  for (size_t i = 0; i < n; i++) {
+    s_strip_fb[i] = bg;
+  }
+  /* Left: word "color" above button A. Middle/right: glyphs per spec. */
+  fb_draw_text(s_strip_fb, HINT_H, 18, 5, "color", ink, bg, 1);
+  int mid_x = GCU_DISPLAY_W / 2;
+  int right_x = (GCU_DISPLAY_W * 5) / 6;
+  int cy = HINT_H / 2;
+  if (view->music == GCU_MUSIC_PLAYING) {
+    fb_icon_pause(s_strip_fb, HINT_H, mid_x, cy, ink);
+  } else {
+    fb_icon_play(s_strip_fb, HINT_H, mid_x, cy, ink);
+  }
+  fb_icon_gear(s_strip_fb, HINT_H, right_x, cy, ink);
+  blit_bitmap(0, GCU_DISPLAY_H - HINT_H, GCU_DISPLAY_W, HINT_H, s_strip_fb);
+  s_last_music_for_hints = (int)view->music;
 }
 
 static void draw_eye(int cx, int cy, int closed, uint16_t face, uint16_t bg) {
@@ -212,11 +411,7 @@ static void draw_face_full(const gcu_view_t *view, const gcu_theme_t *th) {
     draw_text(16, mid_y + 60, "no first.pcm", ink, bg, 1);
   }
 
-  fill_rect(0, GCU_DISPLAY_H - HINT_H, GCU_DISPLAY_W, HINT_H, bg);
-  draw_text(12, GCU_DISPLAY_H - HINT_H + 4, "color", ink, bg, 1);
-  draw_text(140, GCU_DISPLAY_H - HINT_H + 4,
-            view->music == GCU_MUSIC_PLAYING ? "pause" : "play", ink, bg, 1);
-  draw_text(250, GCU_DISPLAY_H - HINT_H + 4, "gear", ink, bg, 1);
+  draw_button_hints(view, th);
 }
 
 typedef struct {
@@ -745,6 +940,10 @@ void board_apply_view(const gcu_view_t *view, const gcu_state_t *st) {
     uint16_t face = rgb565(th->face.r, th->face.g, th->face.b);
     int mid_y = HAIR_H + (GCU_DISPLAY_H - HAIR_H - HINT_H) / 2;
     draw_eye(210, mid_y - 10, view->wink_closed, face, bg);
+  }
+  /* Play/pause flips middle glyph without a full face clear. */
+  if ((int)view->music != s_last_music_for_hints) {
+    draw_button_hints(view, th);
   }
 }
 
