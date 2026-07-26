@@ -1,6 +1,6 @@
 [product]
-name = "GCU"
-fw_name = "GCU"
+name = "Xuss-C"
+fw_name = "XUSSC"
 fw_version = "0.0.1"
 
 [runtime]

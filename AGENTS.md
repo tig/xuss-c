@@ -91,7 +91,7 @@ exactly that; keep that seed when you extend the domain.
 **Boot-print alone is not enough** for `silico inspect` after a greeting or banner scrolls past (#78 / #79). The image **must answer** the host word `identity` (CR/LF framed) with:
 
 ```text
-fw_name=GCU fw_version=0.0.1
+fw_name=XUSSC fw_version=0.0.1
 ```
 
 Plate `main.c` shows the pattern: print once at boot **and** respond when the host knocks. A boot-print-only app is invisible to inspect as soon as the banner is gone.
