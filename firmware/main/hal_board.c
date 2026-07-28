@@ -17,7 +17,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
-#include "esp_rom_crc.h"
+#include "esprec.h"
 #include "esp_spiffs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -237,59 +237,16 @@ static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   }
 }
 
-/*
- * Base64 on the text console — raw RGB565 over stdout is corrupted by VFS
- * CRLF translation (any 0x0A in pixel data becomes 0x0D 0x0A), which shifts
- * the bitmap and makes the face look off-center / wrong-colored vs the panel.
- */
-static void shot_emit_b64(const uint8_t *src, size_t n) {
-  static const char T[] =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  int col = 0;
-  for (size_t i = 0; i < n; i += 3) {
-    size_t rem = n - i;
-    uint32_t a = src[i];
-    uint32_t b = rem > 1 ? src[i + 1] : 0;
-    uint32_t c = rem > 2 ? src[i + 2] : 0;
-    uint32_t triple = (a << 16) | (b << 8) | c;
-    char out[5];
-    out[0] = T[(triple >> 18) & 63];
-    out[1] = T[(triple >> 12) & 63];
-    out[2] = (rem > 1) ? T[(triple >> 6) & 63] : '=';
-    out[3] = (rem > 2) ? T[triple & 63] : '=';
-    out[4] = '\0';
-    fputs(out, stdout);
-    col += 4;
-    if (col >= 76) {
-      fputc('\n', stdout);
-      col = 0;
-    }
-  }
-  if (col) {
-    fputc('\n', stdout);
-  }
-  fflush(stdout);
-}
-
-/* Host screenshot: text header + base64 rgb565 + trailer (console-safe). */
+/* Host screenshot via esprec (ESPREC1, meta+raster CRC, base64 on console). */
 static void board_send_shot(void) {
   if (!ensure_shadow()) {
-    printf("SHOT_ERR no_shadow\n");
+    printf("ESPREC1_ERR no_shadow\n");
     fflush(stdout);
     return;
   }
-  const size_t nbytes = SHADOW_BYTES;
-  uint32_t crc =
-      esp_rom_crc32_le(0, (const uint8_t *)s_shadow, (uint32_t)nbytes);
   /* Quiet logs so ESP_LOG* cannot interleave into the base64 payload. */
   esp_log_level_set("*", ESP_LOG_NONE);
-  /* encoding=b64 avoids binary over cooked UART; nbytes is decoded size. */
-  printf("SHOT w=%d h=%d fmt=rgb565be enc=b64 nbytes=%u crc=0x%08lx\n",
-         GCU_DISPLAY_W, GCU_DISPLAY_H, (unsigned)nbytes, (unsigned long)crc);
-  fflush(stdout);
-  shot_emit_b64((const uint8_t *)s_shadow, nbytes);
-  printf("SHOT_END crc=0x%08lx\n", (unsigned long)crc);
-  fflush(stdout);
+  (void)esprec_emit_rgb565_spi_be(s_shadow, GCU_DISPLAY_W, GCU_DISPLAY_H);
   esp_log_level_set("*", ESP_LOG_INFO);
 }
 
@@ -1141,8 +1098,9 @@ void board_service_serial(gcu_state_t *st) {
           gcu_identity_line(id, (int)sizeof id);
           printf("%s\n", id);
           fflush(stdout);
-        } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0) {
-          /* Shadow framebuffer dump for host/agent vision (no camera). */
+        } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0 ||
+                   strcmp(p, "esprec") == 0 || strncmp(p, "esprec ", 7) == 0) {
+          /* esprec / shadow framebuffer dump for host agent vision (no camera). */
           board_send_shot();
         } else if (strncmp(p, "btn ", 4) == 0 && st) {
           /* Host capture scripts inject edges (a/b/c). Not a product command. */

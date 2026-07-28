@@ -3,5 +3,14 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# esprec on-device component (sibling checkout: tig/esprec next to tig/xuss-c).
+get_filename_component(_ESPREC_COMP
+  "${CMAKE_CURRENT_LIST_DIR}/../../esprec/component" ABSOLUTE)
+if(EXISTS "${_ESPREC_COMP}/esprec/CMakeLists.txt")
+  set(EXTRA_COMPONENT_DIRS "${_ESPREC_COMP}")
+else()
+  message(WARNING "esprec component not found at ${_ESPREC_COMP} — shot capture disabled unless vendored")
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(gcu_c)
