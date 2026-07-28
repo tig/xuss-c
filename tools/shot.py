@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Thin wrapper: prefer installed esprec CLI for Xuss-C screenshots.
+"""Thin wrapper: Xuss-C screenshots via esprec public API / CLI.
 
-Kept so older docs that say ``python tools/shot.py`` still work.
+Prefer::
+
+  esprec snapshot --port COMx -o face.png
+  python tools/screen_scenario.py --port COMx -o capture/
 """
 
 from __future__ import annotations
@@ -19,7 +22,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    # Map legacy flags: tools/shot.py --port X -o Y → esprec snapshot
     argv = ["snapshot"]
     args = sys.argv[1:]
     i = 0
@@ -27,11 +29,11 @@ def main() -> int:
     hz = 2.0
     while i < len(args):
         a = args[i]
-        if a in ("--frames",) and i + 1 < len(args):
+        if a == "--frames" and i + 1 < len(args):
             frames = int(args[i + 1])
             i += 2
             continue
-        if a in ("--hz",) and i + 1 < len(args):
+        if a == "--hz" and i + 1 < len(args):
             hz = float(args[i + 1])
             i += 2
             continue
@@ -44,7 +46,6 @@ def main() -> int:
     if frames > 1:
         argv[0] = "record"
         argv.extend(["--frames", str(frames), "--hz", str(hz)])
-    # Prefer legacy "shot" command (device accepts shot and esprec shot).
     if "--command" not in argv:
         argv.extend(["--command", "shot"])
     return esprec_main(argv)
