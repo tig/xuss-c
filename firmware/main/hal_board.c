@@ -1144,6 +1144,22 @@ void board_service_serial(gcu_state_t *st) {
         } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0) {
           /* Shadow framebuffer dump for host/agent vision (no camera). */
           board_send_shot();
+        } else if (strncmp(p, "btn ", 4) == 0 && st) {
+          /* Host capture scripts inject edges (a/b/c). Not a product command. */
+          char which = (char)tolower((unsigned char)p[4]);
+          if (which == 'a') {
+            gcu_on_button(st, GCU_BTN_A);
+            printf("ok btn a\n");
+          } else if (which == 'b') {
+            gcu_on_button(st, GCU_BTN_B);
+            printf("ok btn b\n");
+          } else if (which == 'c') {
+            gcu_on_button(st, GCU_BTN_C);
+            printf("ok btn c\n");
+          } else {
+            printf("err btn\n");
+          }
+          fflush(stdout);
         } else if (strcmp(p, "repl") == 0) {
           board_park_outputs();
           printf("ok repl parked\n");
