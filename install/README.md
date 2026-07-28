@@ -38,3 +38,15 @@ After soft-reset / power-on:
 ## Escape hatch
 
 USB ASCII lines: `identity`, `repl` (park outputs), `reboot`.
+
+## Screenshot (shadow framebuffer, no camera)
+
+Device keeps a full-frame RGB565 shadow of what it last painted. Host pulls it:
+
+```text
+python tools/shot.py --port COMx -o capture/face.png
+# short clip (frame sequence + GIF):
+python tools/shot.py --port COMx --frames 8 --hz 2 -o capture/clip
+```
+
+Device commands: `shot` or `frame` → header + binary payload + `SHOT_END`.

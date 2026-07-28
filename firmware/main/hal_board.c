@@ -10,12 +10,14 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/spi_master.h"
+#include "driver/uart.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_ili9341.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
+#include "esp_rom_crc.h"
 #include "esp_spiffs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -74,10 +76,16 @@ static uint16_t *s_linebuf;
 static int s_linebuf_w;
 static uint16_t *s_strip_fb; /* hair or hint strip: W * strip_h DMA pixels */
 static int s_strip_fb_h;
+/* Full-frame shadow (panel BE RGB565) for host screenshots without a camera. */
+static uint16_t *s_shadow;
+static int s_shadow_ok;
 static int s_imu_ok;
 static int64_t s_last_details_ms;
 static int s_spiffs_ok;
 static int s_last_music_for_hints = -1;
+
+#define SHADOW_PIXELS ((size_t)GCU_DISPLAY_W * (size_t)GCU_DISPLAY_H)
+#define SHADOW_BYTES (SHADOW_PIXELS * sizeof(uint16_t))
 
 /*
  * Logical RGB → panel pixel.
@@ -141,15 +149,66 @@ static int ensure_strip_fb(int h) {
   return s_strip_fb != NULL;
 }
 
-static void blit_bitmap(int x, int y, int w, int h, const uint16_t *px) {
-  if (!s_panel || !px || w <= 0 || h <= 0) {
+static int ensure_shadow(void) {
+  if (s_shadow_ok && s_shadow) {
+    return 1;
+  }
+  /* Prefer internal 8-bit capable heap; fall back to any. */
+  s_shadow = (uint16_t *)heap_caps_malloc(SHADOW_BYTES, MALLOC_CAP_8BIT);
+  if (!s_shadow) {
+    s_shadow = (uint16_t *)malloc(SHADOW_BYTES);
+  }
+  if (!s_shadow) {
+    ESP_LOGW(TAG, "shadow FB alloc failed (%u bytes)", (unsigned)SHADOW_BYTES);
+    s_shadow_ok = 0;
+    return 0;
+  }
+  memset(s_shadow, 0, SHADOW_BYTES);
+  s_shadow_ok = 1;
+  ESP_LOGI(TAG, "shadow FB %ux%u ready (%u bytes)", GCU_DISPLAY_W, GCU_DISPLAY_H,
+           (unsigned)SHADOW_BYTES);
+  return 1;
+}
+
+static void shadow_store_row(int x, int y, int w, const uint16_t *px) {
+  if (!s_shadow_ok || !s_shadow || !px || y < 0 || y >= GCU_DISPLAY_H || w <= 0) {
     return;
   }
-  esp_lcd_panel_draw_bitmap(s_panel, x, y, x + w, y + h, px);
+  if (x < 0) {
+    px += -x;
+    w += x;
+    x = 0;
+  }
+  if (x + w > GCU_DISPLAY_W) {
+    w = GCU_DISPLAY_W - x;
+  }
+  if (w <= 0) {
+    return;
+  }
+  memcpy(&s_shadow[y * GCU_DISPLAY_W + x], px, (size_t)w * sizeof(uint16_t));
+}
+
+static void blit_bitmap(int x, int y, int w, int h, const uint16_t *px) {
+  if (!px || w <= 0 || h <= 0) {
+    return;
+  }
+  /* Always keep shadow in sync when allocated (even if panel missing). */
+  if (s_shadow_ok && s_shadow) {
+    for (int row = 0; row < h; row++) {
+      int py = y + row;
+      if (py < 0 || py >= GCU_DISPLAY_H) {
+        continue;
+      }
+      shadow_store_row(x, py, w, px + (size_t)row * (size_t)w);
+    }
+  }
+  if (s_panel) {
+    esp_lcd_panel_draw_bitmap(s_panel, x, y, x + w, y + h, px);
+  }
 }
 
 static void fill_rect(int x, int y, int w, int h, uint16_t color) {
-  if (!s_panel || w <= 0 || h <= 0) {
+  if (w <= 0 || h <= 0) {
     return;
   }
   if (x < 0) {
@@ -176,6 +235,37 @@ static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   for (int row = 0; row < h; row++) {
     blit_bitmap(x, y + row, w, 1, s_linebuf);
   }
+}
+
+/* Host screenshot: text header + raw BE rgb565 + trailer. Console UART0. */
+static void board_send_shot(void) {
+  if (!ensure_shadow()) {
+    printf("SHOT_ERR no_shadow\n");
+    fflush(stdout);
+    return;
+  }
+  const size_t nbytes = SHADOW_BYTES;
+  uint32_t crc =
+      esp_rom_crc32_le(0, (const uint8_t *)s_shadow, (uint32_t)nbytes);
+  printf("SHOT w=%d h=%d fmt=rgb565be nbytes=%u crc=0x%08lx\n", GCU_DISPLAY_W,
+         GCU_DISPLAY_H, (unsigned)nbytes, (unsigned long)crc);
+  fflush(stdout);
+  /* Binary payload — not via printf. */
+  const uint8_t *p = (const uint8_t *)s_shadow;
+  size_t left = nbytes;
+  while (left > 0) {
+    size_t chunk = left > 1024 ? 1024 : left;
+    int n = uart_write_bytes(UART_NUM_0, (const char *)p, chunk);
+    if (n < 0) {
+      printf("\nSHOT_ERR uart_write\n");
+      fflush(stdout);
+      return;
+    }
+    p += (size_t)n;
+    left -= (size_t)n;
+  }
+  printf("\nSHOT_END crc=0x%08lx\n", (unsigned long)crc);
+  fflush(stdout);
 }
 
 /* Compose 5x7 glyph into a strip framebuffer (stride = GCU_DISPLAY_W). */
@@ -865,6 +955,7 @@ static void stdin_set_nonblocking(void) {
 
 void board_init(void) {
   s_audio_mu = xSemaphoreCreateMutex();
+  (void)ensure_shadow();
   init_spiffs();
   init_leds();
   init_display();
@@ -1025,6 +1116,9 @@ void board_service_serial(gcu_state_t *st) {
           gcu_identity_line(id, (int)sizeof id);
           printf("%s\n", id);
           fflush(stdout);
+        } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0) {
+          /* Shadow framebuffer dump for host/agent vision (no camera). */
+          board_send_shot();
         } else if (strcmp(p, "repl") == 0) {
           board_park_outputs();
           printf("ok repl parked\n");
