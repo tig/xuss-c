@@ -17,3 +17,6 @@ firmware/sdkconfig.old
 # Generated audio (rebuild from First.mp3)
 assets/*.pcm
 
+
+capture/
+
