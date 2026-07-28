@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Pull a shadow-framebuffer screenshot from Xuss-C over USB serial.
 
-Protocol (device):
+Protocol (device) — base64 so cooked console CRLF cannot corrupt 0x0A pixels:
   Host writes:  shot\\n
-  Device prints: SHOT w=320 h=240 fmt=rgb565be nbytes=N crc=0x...
-  Device writes: N raw big-endian RGB565 bytes
+  Device prints: SHOT w=320 h=240 fmt=rgb565be enc=b64 nbytes=N crc=0x...
+  Device prints: base64 lines (76 cols)
   Device prints: SHOT_END crc=0x...
 
 Example:
@@ -15,8 +15,9 @@ Example:
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import re
-import struct
 import sys
 import time
 from pathlib import Path
@@ -35,24 +36,23 @@ except ImportError as e:
 
 HEADER_RE = re.compile(
     r"^SHOT\s+w=(?P<w>\d+)\s+h=(?P<h>\d+)\s+fmt=(?P<fmt>\S+)\s+"
+    r"(?:enc=(?P<enc>\S+)\s+)?"
     r"nbytes=(?P<nbytes>\d+)\s+crc=(?P<crc>0x[0-9A-Fa-f]+)\s*$"
 )
 
 
-def rgb565_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
-    """Convert device shadow RGB565 dump to RGB PIL image.
-
-    Shadow holds panel DMA words (byte-swapped 565). On LE ESP32 the dump
-    is memory order; treating successive bytes as big-endian 565 matches
-    the SPI wire packing used by the panel path (verified on metal shot).
-    """
+def rgb565_shadow_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
+    """Convert device shadow (LE memory of SPI byte-swapped RGB565) to RGB."""
     need = w * h * 2
     if len(buf) < need:
         raise ValueError(f"short frame: got {len(buf)} want {need}")
     out = bytearray(w * h * 3)
     o = 0
     for i in range(0, need, 2):
-        pix = (buf[i] << 8) | buf[i + 1]
+        # uint16 as stored on LE ESP32 (same words sent to the panel DMA).
+        wire = buf[i] | (buf[i + 1] << 8)
+        # Undo firmware rgb565() byte-swap → logical 565 (R in high bits).
+        pix = ((wire & 0xFF) << 8) | ((wire >> 8) & 0xFF)
         r = (pix >> 11) & 0x1F
         g = (pix >> 5) & 0x3F
         b = pix & 0x1F
@@ -63,7 +63,7 @@ def rgb565_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
     return Image.frombytes("RGB", (w, h), bytes(out))
 
 
-def grab_one(ser: serial.Serial, timeout_s: float = 45.0) -> tuple[Image.Image, dict]:
+def grab_one(ser: serial.Serial, timeout_s: float = 60.0) -> tuple[Image.Image, dict]:
     ser.reset_input_buffer()
     ser.write(b"shot\n")
     ser.flush()
@@ -73,17 +73,13 @@ def grab_one(ser: serial.Serial, timeout_s: float = 45.0) -> tuple[Image.Image, 
         line = ser.readline()
         if not line:
             continue
-        try:
-            text = line.decode("utf-8", errors="replace").strip()
-        except Exception:
-            continue
+        text = line.decode("utf-8", errors="replace").strip()
         if text.startswith("SHOT_ERR"):
             raise RuntimeError(text)
         m = HEADER_RE.match(text)
         if m:
             header = m.groupdict()
             break
-        # ignore boot chatter / identity lines
     if not header:
         raise TimeoutError("no SHOT header from device")
 
@@ -92,36 +88,51 @@ def grab_one(ser: serial.Serial, timeout_s: float = 45.0) -> tuple[Image.Image, 
     nbytes = int(header["nbytes"])
     crc_hdr = int(header["crc"], 16)
     fmt = header["fmt"]
+    enc = (header.get("enc") or "raw").lower()
     if fmt != "rgb565be":
         raise RuntimeError(f"unsupported fmt {fmt}")
 
-    # Full frame @ 115200 ≈ 13s+; keep reading until full or deadline.
-    ser.timeout = 2.0
+    b64_parts: list[str] = []
     raw = bytearray()
-    stall = 0
-    while len(raw) < nbytes and time.monotonic() < deadline:
-        chunk = ser.read(min(4096, nbytes - len(raw)))
-        if chunk:
-            raw.extend(chunk)
-            stall = 0
-        else:
-            stall += 1
-            if stall > 20 and len(raw) == 0:
+
+    if enc in ("b64", "base64"):
+        while time.monotonic() < deadline:
+            line = ser.readline()
+            if not line:
+                continue
+            text = line.decode("utf-8", errors="replace").strip()
+            if text.startswith("SHOT_END"):
                 break
+            if text.startswith("SHOT"):
+                continue
+            # base64 alphabet only
+            if re.fullmatch(r"[A-Za-z0-9+/=]+", text):
+                b64_parts.append(text)
+        try:
+            s = "".join(b64_parts)
+            s += "=" * ((4 - (len(s) % 4)) % 4)
+            raw = bytearray(base64.b64decode(s, validate=False))
+        except Exception as e:
+            raise RuntimeError(
+                f"base64 decode failed: {e} (parts={len(b64_parts)} chars={sum(len(p) for p in b64_parts)})"
+            ) from e
+    else:
+        # Legacy raw path (fragile on cooked consoles)
+        ser.timeout = 2.0
+        while len(raw) < nbytes and time.monotonic() < deadline:
+            chunk = ser.read(min(4096, nbytes - len(raw)))
+            if chunk:
+                raw.extend(chunk)
+        while time.monotonic() < deadline:
+            line = ser.readline()
+            if not line:
+                continue
+            if line.decode("utf-8", errors="replace").strip().startswith("SHOT_END"):
+                break
+
     if len(raw) < nbytes:
-        raise TimeoutError(f"short binary payload {len(raw)}/{nbytes}")
-
-    # Trailer (may be preceded by noise; scan lines briefly)
-    end_deadline = min(deadline, time.monotonic() + 5.0)
-    while time.monotonic() < end_deadline:
-        line = ser.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if text.startswith("SHOT_END"):
-            break
-
-    import binascii
+        raise TimeoutError(f"short payload {len(raw)}/{nbytes}")
+    raw = raw[:nbytes]
 
     crc_calc = binascii.crc32(raw) & 0xFFFFFFFF
     meta = {
@@ -131,8 +142,9 @@ def grab_one(ser: serial.Serial, timeout_s: float = 45.0) -> tuple[Image.Image, 
         "crc_header": crc_hdr,
         "crc_calc": crc_calc,
         "fmt": fmt,
+        "enc": enc,
     }
-    img = rgb565_to_rgb(bytes(raw), w, h)
+    img = rgb565_shadow_to_rgb(bytes(raw), w, h)
     return img, meta
 
 
@@ -151,7 +163,6 @@ def main() -> int:
 
     ser = serial.Serial(args.port, args.baud, timeout=0.5)
     try:
-        # Avoid reset pulse on open if possible
         ser.dtr = False
         ser.rts = False
         time.sleep(args.settle)
@@ -160,16 +171,17 @@ def main() -> int:
         if args.frames <= 1:
             img, meta = grab_one(ser)
             img.save(out)
-            print(f"OK wrote {out} {meta['w']}x{meta['h']} crc=0x{meta['crc_header']:08x}")
+            print(
+                f"OK wrote {out} {meta['w']}x{meta['h']} "
+                f"enc={meta['enc']} crc=0x{meta['crc_header']:08x}"
+            )
             if meta["crc_calc"] != meta["crc_header"]:
                 print(
-                    f"WARN crc mismatch calc=0x{meta['crc_calc']:08x} "
-                    f"(image still saved; CRC poly may differ)",
+                    f"WARN crc mismatch calc=0x{meta['crc_calc']:08x}",
                     file=sys.stderr,
                 )
             return 0
 
-        # Multi-frame clip → PNG sequence + optional GIF
         period = 1.0 / args.hz if args.hz > 0 else 0.5
         frames: list[Image.Image] = []
         stem = out.with_suffix("") if out.suffix else out

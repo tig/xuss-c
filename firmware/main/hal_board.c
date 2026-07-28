@@ -237,7 +237,41 @@ static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   }
 }
 
-/* Host screenshot: text header + raw BE rgb565 + trailer on the console link. */
+/*
+ * Base64 on the text console — raw RGB565 over stdout is corrupted by VFS
+ * CRLF translation (any 0x0A in pixel data becomes 0x0D 0x0A), which shifts
+ * the bitmap and makes the face look off-center / wrong-colored vs the panel.
+ */
+static void shot_emit_b64(const uint8_t *src, size_t n) {
+  static const char T[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  int col = 0;
+  for (size_t i = 0; i < n; i += 3) {
+    size_t rem = n - i;
+    uint32_t a = src[i];
+    uint32_t b = rem > 1 ? src[i + 1] : 0;
+    uint32_t c = rem > 2 ? src[i + 2] : 0;
+    uint32_t triple = (a << 16) | (b << 8) | c;
+    char out[5];
+    out[0] = T[(triple >> 18) & 63];
+    out[1] = T[(triple >> 12) & 63];
+    out[2] = (rem > 1) ? T[(triple >> 6) & 63] : '=';
+    out[3] = (rem > 2) ? T[triple & 63] : '=';
+    out[4] = '\0';
+    fputs(out, stdout);
+    col += 4;
+    if (col >= 76) {
+      fputc('\n', stdout);
+      col = 0;
+    }
+  }
+  if (col) {
+    fputc('\n', stdout);
+  }
+  fflush(stdout);
+}
+
+/* Host screenshot: text header + base64 rgb565 + trailer (console-safe). */
 static void board_send_shot(void) {
   if (!ensure_shadow()) {
     printf("SHOT_ERR no_shadow\n");
@@ -247,29 +281,16 @@ static void board_send_shot(void) {
   const size_t nbytes = SHADOW_BYTES;
   uint32_t crc =
       esp_rom_crc32_le(0, (const uint8_t *)s_shadow, (uint32_t)nbytes);
-  printf("SHOT w=%d h=%d fmt=rgb565be nbytes=%u crc=0x%08lx\n", GCU_DISPLAY_W,
-         GCU_DISPLAY_H, (unsigned)nbytes, (unsigned long)crc);
+  /* Quiet logs so ESP_LOG* cannot interleave into the base64 payload. */
+  esp_log_level_set("*", ESP_LOG_NONE);
+  /* encoding=b64 avoids binary over cooked UART; nbytes is decoded size. */
+  printf("SHOT w=%d h=%d fmt=rgb565be enc=b64 nbytes=%u crc=0x%08lx\n",
+         GCU_DISPLAY_W, GCU_DISPLAY_H, (unsigned)nbytes, (unsigned long)crc);
   fflush(stdout);
-  /*
-   * Binary on the same VFS stdout as printf (USB CDC / UART console).
-   * uart_write_bytes(UART_NUM_0) can miss the actual console backend.
-   */
-  const uint8_t *p = (const uint8_t *)s_shadow;
-  size_t left = nbytes;
-  while (left > 0) {
-    size_t chunk = left > 2048 ? 2048 : left;
-    ssize_t n = write(STDOUT_FILENO, p, chunk);
-    if (n <= 0) {
-      printf("\nSHOT_ERR write errno=%d\n", errno);
-      fflush(stdout);
-      return;
-    }
-    p += (size_t)n;
-    left -= (size_t)n;
-  }
+  shot_emit_b64((const uint8_t *)s_shadow, nbytes);
+  printf("SHOT_END crc=0x%08lx\n", (unsigned long)crc);
   fflush(stdout);
-  printf("\nSHOT_END crc=0x%08lx\n", (unsigned long)crc);
-  fflush(stdout);
+  esp_log_level_set("*", ESP_LOG_INFO);
 }
 
 /* Compose 5x7 glyph into a strip framebuffer (stride = GCU_DISPLAY_W). */
