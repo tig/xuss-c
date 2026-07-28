@@ -237,7 +237,7 @@ static void fill_rect(int x, int y, int w, int h, uint16_t color) {
   }
 }
 
-/* Host screenshot: text header + raw BE rgb565 + trailer. Console UART0. */
+/* Host screenshot: text header + raw BE rgb565 + trailer on the console link. */
 static void board_send_shot(void) {
   if (!ensure_shadow()) {
     printf("SHOT_ERR no_shadow\n");
@@ -250,20 +250,24 @@ static void board_send_shot(void) {
   printf("SHOT w=%d h=%d fmt=rgb565be nbytes=%u crc=0x%08lx\n", GCU_DISPLAY_W,
          GCU_DISPLAY_H, (unsigned)nbytes, (unsigned long)crc);
   fflush(stdout);
-  /* Binary payload — not via printf. */
+  /*
+   * Binary on the same VFS stdout as printf (USB CDC / UART console).
+   * uart_write_bytes(UART_NUM_0) can miss the actual console backend.
+   */
   const uint8_t *p = (const uint8_t *)s_shadow;
   size_t left = nbytes;
   while (left > 0) {
-    size_t chunk = left > 1024 ? 1024 : left;
-    int n = uart_write_bytes(UART_NUM_0, (const char *)p, chunk);
-    if (n < 0) {
-      printf("\nSHOT_ERR uart_write\n");
+    size_t chunk = left > 2048 ? 2048 : left;
+    ssize_t n = write(STDOUT_FILENO, p, chunk);
+    if (n <= 0) {
+      printf("\nSHOT_ERR write errno=%d\n", errno);
       fflush(stdout);
       return;
     }
     p += (size_t)n;
     left -= (size_t)n;
   }
+  fflush(stdout);
   printf("\nSHOT_END crc=0x%08lx\n", (unsigned long)crc);
   fflush(stdout);
 }

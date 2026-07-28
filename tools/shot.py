@@ -39,15 +39,19 @@ HEADER_RE = re.compile(
 )
 
 
-def be_rgb565_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
-    """Convert big-endian RGB565 (panel wire format) to RGB PIL image."""
+def rgb565_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
+    """Convert device shadow RGB565 dump to RGB PIL image.
+
+    Shadow holds panel DMA words (byte-swapped 565). On LE ESP32 the dump
+    is memory order; treating successive bytes as big-endian 565 matches
+    the SPI wire packing used by the panel path (verified on metal shot).
+    """
     need = w * h * 2
     if len(buf) < need:
         raise ValueError(f"short frame: got {len(buf)} want {need}")
     out = bytearray(w * h * 3)
     o = 0
     for i in range(0, need, 2):
-        # Wire is big-endian 565 as stored on device after host LE swap.
         pix = (buf[i] << 8) | buf[i + 1]
         r = (pix >> 11) & 0x1F
         g = (pix >> 5) & 0x3F
@@ -59,7 +63,7 @@ def be_rgb565_to_rgb(buf: bytes, w: int, h: int) -> Image.Image:
     return Image.frombytes("RGB", (w, h), bytes(out))
 
 
-def grab_one(ser: serial.Serial, timeout_s: float = 15.0) -> tuple[Image.Image, dict]:
+def grab_one(ser: serial.Serial, timeout_s: float = 45.0) -> tuple[Image.Image, dict]:
     ser.reset_input_buffer()
     ser.write(b"shot\n")
     ser.flush()
@@ -91,16 +95,25 @@ def grab_one(ser: serial.Serial, timeout_s: float = 15.0) -> tuple[Image.Image, 
     if fmt != "rgb565be":
         raise RuntimeError(f"unsupported fmt {fmt}")
 
+    # Full frame @ 115200 ≈ 13s+; keep reading until full or deadline.
+    ser.timeout = 2.0
     raw = bytearray()
+    stall = 0
     while len(raw) < nbytes and time.monotonic() < deadline:
-        chunk = ser.read(nbytes - len(raw))
+        chunk = ser.read(min(4096, nbytes - len(raw)))
         if chunk:
             raw.extend(chunk)
+            stall = 0
+        else:
+            stall += 1
+            if stall > 20 and len(raw) == 0:
+                break
     if len(raw) < nbytes:
         raise TimeoutError(f"short binary payload {len(raw)}/{nbytes}")
 
-    # Trailer
-    while time.monotonic() < deadline:
+    # Trailer (may be preceded by noise; scan lines briefly)
+    end_deadline = min(deadline, time.monotonic() + 5.0)
+    while time.monotonic() < end_deadline:
         line = ser.readline()
         if not line:
             continue
@@ -108,13 +121,9 @@ def grab_one(ser: serial.Serial, timeout_s: float = 15.0) -> tuple[Image.Image, 
         if text.startswith("SHOT_END"):
             break
 
-    # CRC: ESP ROM crc32_le, init 0
     import binascii
 
-    # esp_rom_crc32_le is CRC-32/ISO-HDLC style with init 0; Python's
-    # binascii.crc32 is the same polynomial with init 0 when seeded 0.
     crc_calc = binascii.crc32(raw) & 0xFFFFFFFF
-    # Note: if ROM CRC differs, still save image; warn only.
     meta = {
         "w": w,
         "h": h,
@@ -123,7 +132,7 @@ def grab_one(ser: serial.Serial, timeout_s: float = 15.0) -> tuple[Image.Image, 
         "crc_calc": crc_calc,
         "fmt": fmt,
     }
-    img = be_rgb565_to_rgb(bytes(raw), w, h)
+    img = rgb565_to_rgb(bytes(raw), w, h)
     return img, meta
 
 
