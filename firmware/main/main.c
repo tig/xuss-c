@@ -35,6 +35,8 @@ void app_main(void) {
     board_poll_domain_events(&st);
     gcu_tick(&st, &view);
     board_apply_view(&view, &st);
+    /* Sample living UI into esprec ring/flash when a rec session is active. */
+    board_esprec_rec_poll();
     if (hal && hal->delay_ms) {
       hal->delay_ms(hal, GCU_DEFAULTS.ui_tick_ms);
     }

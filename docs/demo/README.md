@@ -2,19 +2,23 @@
 
 Host-paced ESPREC1 captures of the product UI on a real M5GO-class board.
 
-## Bench (capture rate)
+## Two capture modes
 
-See [`bench_capture_rate.json`](bench_capture_rate.json). Summary @ 115200 baud, 320×240:
+| Mode | Command | When |
+|------|---------|------|
+| **Shot** (full 320×240) | `shot` / `esprec snapshot` | Keyframes, docs stills (~18.5 s/frame @ 115200) |
+| **Rec → spool** (quarter 80×60) | `esprec rec start hz sec` → `stop` → `spool` | Continuous living UI (~5 Hz sample; transfer later) |
 
-| Metric | Value |
-|--------|------:|
-| Mean full-panel shot | ~18.5 s |
-| Max sustainable host-paced FPS | **~0.054** |
-| Identity RTT before/after shot | ~50–60 ms |
+See [`bench_capture_rate.json`](bench_capture_rate.json) for host-paced shot limits.
 
-The limit is **USB serial + base64**, not host CPU. The device UI is blocked for each emit. Raising continuous `--hz` above ~0.05 does not help.
+**Realtime living GIF** (device samples ~5 Hz into flash, then spools):
 
-Playback smoothness for demos uses **GIF frame delays** (keyframe style), not capture FPS.
+```text
+esprec spool --port COMx --duration 3 --hz 5 -o docs/demo/xuss-c-living-realtime.gif
+# or: python tools/demo_record.py --port COMx -o docs/demo --captions
+```
+
+Measured on M5GO: **16 frames / 3 s**, mean inter-frame **~210 ms** (~4.8 Hz).
 
 ## Artifacts
 

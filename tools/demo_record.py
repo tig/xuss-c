@@ -18,7 +18,7 @@ from pathlib import Path
 from PIL import Image
 
 try:
-    from esprec.capture import capture_image
+    from esprec.capture import capture_image, spool_to_gif
     from esprec.image_out import caption_above, save_gif, save_png
     from esprec.serial_port import open_port
 except ImportError:
@@ -80,10 +80,16 @@ def main() -> int:
     ap.add_argument("--hold", type=float, default=0.55, help="UI settle after btn")
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument(
-        "--living-samples",
-        type=int,
-        default=3,
-        help="back-to-back idle samples to show banner/wink change (serial-bound)",
+        "--living-hz",
+        type=float,
+        default=5.0,
+        help="device-side sample rate for living-face spool (realtime GIF)",
+    )
+    ap.add_argument(
+        "--living-sec",
+        type=float,
+        default=2.5,
+        help="seconds of living-face continuous capture via esprec rec/spool",
     )
     ap.add_argument(
         "--captions",
@@ -91,6 +97,11 @@ def main() -> int:
         help="pad captions above panel (never over product chrome)",
     )
     ap.add_argument("--no-reboot", action="store_true")
+    ap.add_argument(
+        "--no-spool",
+        action="store_true",
+        help="skip device rec/spool living segment (keyframes only)",
+    )
     args = ap.parse_args()
 
     out = Path(args.outdir)
@@ -133,10 +144,25 @@ def main() -> int:
         time.sleep(args.boot_wait)
         ser.reset_input_buffer()
 
-        # Living face samples first (banner progresses between 18s dumps).
-        n_live = max(1, args.living_samples)
-        for i in range(n_live):
-            add(f"idle living sample {i + 1}/{n_live}", DELAY_LIVING_MS)
+        # Continuous living-face segment: device samples at living_hz into
+        # RAM/flash, then spools once (realtime GIF delays from ts_ms).
+        if not args.no_spool:
+            live_gif = out / "xuss-c-living-realtime.gif"
+            print(
+                f"device rec/spool living face {args.living_sec}s @ {args.living_hz} Hz…"
+            )
+            metas = spool_to_gif(
+                ser,
+                live_gif,
+                duration_s=args.living_sec,
+                hz=args.living_hz,
+                settle_s=0.4,
+                timeout_s=args.timeout * 3,
+            )
+            print(f"OK {live_gif} ({len(metas)} frames, device sample)")
+            # Also fold first/mid/last stills into keyframe storyboard
+            if metas:
+                add("idle face (post living spool)", DELAY_STATE_MS)
 
         add("theme orange (A)", DELAY_STATE_MS, after_btn="a")
         add("Details sensors (C)", DELAY_DETAILS_MS, after_btn="c")

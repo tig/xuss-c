@@ -250,6 +250,71 @@ static void board_send_shot(void) {
   esp_log_level_set("*", ESP_LOG_INFO);
 }
 
+void board_esprec_rec_poll(void) {
+  if (!esprec_rec_active() || !s_shadow_ok || !s_shadow) {
+    return;
+  }
+  int64_t now = esp_timer_get_time() / 1000;
+  if (!esprec_rec_due(now)) {
+    return;
+  }
+  /* Half-res store keeps SPIFFS writes fast enough for multi-Hz sampling. */
+  (void)esprec_rec_push_scaled(s_shadow, GCU_DISPLAY_W, GCU_DISPLAY_H, now);
+}
+
+static void board_esprec_rec_start(const char *args) {
+  /* args: optional "hz sec" e.g. "5 3" → 5 Hz for 3 seconds */
+  float hz = 5.0f;
+  float sec = 3.0f;
+  if (args && *args) {
+    (void)sscanf(args, "%f %f", &hz, &sec);
+  }
+  if (hz < 0.5f) {
+    hz = 0.5f;
+  }
+  if (hz > 30.0f) {
+    hz = 30.0f;
+  }
+  if (sec < 0.2f) {
+    sec = 0.2f;
+  }
+  if (sec > 30.0f) {
+    sec = 30.0f;
+  }
+  int interval_ms = (int)(1000.0f / hz + 0.5f);
+  if (interval_ms < 33) {
+    interval_ms = 33; /* ~30 fps cap */
+  }
+  int max_frames = (int)(hz * sec + 2.5f);
+  if (max_frames < 2) {
+    max_frames = 2;
+  }
+  if (max_frames > 120) {
+    max_frames = 120;
+  }
+  if (!ensure_shadow()) {
+    printf("ESPREC1_ERR no_shadow\n");
+    fflush(stdout);
+    return;
+  }
+  /*
+   * Continuous rec uses quarter panel (80×60 ≈ 9.6 KiB) so SPIFFS writes stay
+   * under the sample interval. Full 320×240 shot path is unchanged.
+   * (Half-res ~38 KiB writes still cost ~0.9 s and collapsed rate to ~1 Hz.)
+   */
+  int rw = GCU_DISPLAY_W / 4;
+  int rh = GCU_DISPLAY_H / 4;
+  if (esprec_rec_begin(rw, rh, interval_ms, max_frames, "/spiffs") != 0) {
+    return;
+  }
+}
+
+static void board_esprec_spool(void) {
+  esp_log_level_set("*", ESP_LOG_NONE);
+  (void)esprec_rec_spool();
+  esp_log_level_set("*", ESP_LOG_INFO);
+}
+
 /* Compose 5x7 glyph into a strip framebuffer (stride = GCU_DISPLAY_W). */
 static void fb_draw_char(uint16_t *fb, int fb_h, int x, int y, char c,
                          uint16_t fg, uint16_t bg, int scale) {
@@ -1098,10 +1163,32 @@ void board_service_serial(gcu_state_t *st) {
           gcu_identity_line(id, (int)sizeof id);
           printf("%s\n", id);
           fflush(stdout);
-        } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0 ||
-                   strcmp(p, "esprec") == 0 || strncmp(p, "esprec ", 7) == 0) {
-          /* esprec / shadow framebuffer dump for host agent vision (no camera). */
+        } else if (strcmp(p, "shot") == 0 || strcmp(p, "frame") == 0) {
           board_send_shot();
+        } else if (strcmp(p, "esprec") == 0) {
+          board_send_shot();
+        } else if (strncmp(p, "esprec ", 7) == 0) {
+          const char *sub = p + 7;
+          if (strcmp(sub, "shot") == 0) {
+            board_send_shot();
+          } else if (strncmp(sub, "rec start", 9) == 0) {
+            const char *args = sub + 9;
+            while (*args == ' ') {
+              args++;
+            }
+            board_esprec_rec_start(args);
+          } else if (strcmp(sub, "rec stop") == 0) {
+            (void)esprec_rec_stop();
+          } else if (strcmp(sub, "spool") == 0) {
+            board_esprec_spool();
+          } else if (strcmp(sub, "rec abort") == 0) {
+            esprec_rec_abort();
+            printf("ok rec abort\n");
+            fflush(stdout);
+          } else {
+            printf("err esprec unknown\n");
+            fflush(stdout);
+          }
         } else if (strncmp(p, "btn ", 4) == 0 && st) {
           /* Host capture scripts inject edges (a/b/c). Not a product command. */
           char which = (char)tolower((unsigned char)p[4]);
