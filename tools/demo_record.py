@@ -32,6 +32,10 @@ DELAY_PLAY_MS = 1400
 DELAY_DETAILS_MS = 1300
 
 
+class DemoError(RuntimeError):
+    """Hard fail for demo recording (do not emit misleading labeled frames)."""
+
+
 def wait_ok(ser, prefix: str = "ok", timeout: float = 3.0) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -45,10 +49,15 @@ def wait_ok(ser, prefix: str = "ok", timeout: float = 3.0) -> str:
 
 
 def btn(ser, which: str, hold: float = 0.5) -> None:
+    """Inject button edge; abort if firmware does not acknowledge."""
     ser.reset_input_buffer()
     ser.write(f"btn {which}\n".encode())
     ser.flush()
-    wait_ok(ser, "ok btn", timeout=2.0)
+    ack = wait_ok(ser, "ok btn", timeout=2.0)
+    if not ack:
+        raise DemoError(f"btn {which}: no acknowledgement (timeout)")
+    if ack.startswith("err"):
+        raise DemoError(f"btn {which}: device replied {ack!r}")
     time.sleep(hold)
 
 
@@ -60,14 +69,14 @@ def snap(
     timeout: float,
     delay_ms: int,
     caption: bool,
-) -> tuple[Image.Image, int]:
+) -> tuple[Image.Image, Image.Image, int]:
+    """Return (product_rgb, gif_frame, delay_ms). product_rgb is never captioned."""
     meta, img = capture_image(ser, command="shot", timeout_s=timeout)
     rgb = img.convert("RGB")
     save_png(rgb, path)
     print(f"OK {path.name} {meta.w}x{meta.h} delay={delay_ms}ms — {note}")
-    if caption:
-        return caption_above(rgb, note), delay_ms
-    return rgb, delay_ms
+    gif_frame = caption_above(rgb, note) if caption else rgb
+    return rgb, gif_frame, delay_ms
 
 
 def main() -> int:
@@ -107,7 +116,8 @@ def main() -> int:
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
 
-    frames: list[Image.Image] = []
+    product_frames: list[Image.Image] = []
+    demo_frames: list[Image.Image] = []
     delays: list[int] = []
     step = 0
 
@@ -117,7 +127,7 @@ def main() -> int:
             btn(ser, after_btn, hold=args.hold)
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in note)[:48]
         path = out / f"{step:02d}_{safe}.png"
-        img, d = snap(
+        product, gif_frame, d = snap(
             ser,
             path,
             note,
@@ -125,7 +135,8 @@ def main() -> int:
             delay_ms=delay_ms,
             caption=args.captions,
         )
-        frames.append(img)
+        product_frames.append(product)
+        demo_frames.append(gif_frame)
         delays.append(d)
         step += 1
 
@@ -160,7 +171,6 @@ def main() -> int:
                 timeout_s=args.timeout * 3,
             )
             print(f"OK {live_gif} ({len(metas)} frames, device sample)")
-            # Also fold first/mid/last stills into keyframe storyboard
             if metas:
                 add("idle face (post living spool)", DELAY_STATE_MS)
 
@@ -174,22 +184,41 @@ def main() -> int:
         add(f"still playing ~{args.play_wait:.0f}s", DELAY_PLAY_MS)
         add("pause via A (no theme change)", DELAY_STATE_MS, after_btn="a")
 
-        gif = out / "xuss-c-demo.gif"
-        frames[0].save(
-            gif,
+        if not product_frames:
+            raise DemoError("no frames captured")
+
+        # Narrative demo GIF (may include captions above panel).
+        demo_gif = out / "xuss-c-demo.gif"
+        demo_frames[0].save(
+            demo_gif,
             save_all=True,
-            append_images=frames[1:],
+            append_images=demo_frames[1:],
             duration=delays,
             loop=0,
             optimize=False,
         )
-        # Also pure-product stills index without captions for docs
-        print(f"OK wrote {gif} ({len(frames)} frames, delays_ms={delays})")
+        # Always also write pure product pixels (README / docs link this path).
+        product_gif = out / "xuss-c-demo-product.gif"
+        product_frames[0].save(
+            product_gif,
+            save_all=True,
+            append_images=product_frames[1:],
+            duration=delays,
+            loop=0,
+            optimize=False,
+        )
+        print(
+            f"OK wrote {demo_gif} + {product_gif} "
+            f"({len(product_frames)} frames, delays_ms={delays})"
+        )
         print(
             "capture_note: host-paced max ~0.054 fps @ 115200; "
             "GIF delays make playback smooth, not capture rate"
         )
         return 0
+    except DemoError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     finally:
         ser.close()
 

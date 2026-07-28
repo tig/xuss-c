@@ -263,11 +263,12 @@ void board_esprec_rec_poll(void) {
 }
 
 static void board_esprec_rec_start(const char *args) {
-  /* args: optional "hz sec" e.g. "5 3" → 5 Hz for 3 seconds */
+  /* args: optional "hz sec [max_frames]" e.g. "5 3 10" */
   float hz = 5.0f;
   float sec = 3.0f;
+  int max_override = 0;
   if (args && *args) {
-    (void)sscanf(args, "%f %f", &hz, &sec);
+    (void)sscanf(args, "%f %f %d", &hz, &sec, &max_override);
   }
   if (hz < 0.5f) {
     hz = 0.5f;
@@ -285,9 +286,9 @@ static void board_esprec_rec_start(const char *args) {
   if (interval_ms < 33) {
     interval_ms = 33; /* ~30 fps cap */
   }
-  int max_frames = (int)(hz * sec + 2.5f);
-  if (max_frames < 2) {
-    max_frames = 2;
+  int max_frames = (max_override > 0) ? max_override : (int)(hz * sec + 2.5f);
+  if (max_frames < 1) {
+    max_frames = 1;
   }
   if (max_frames > 120) {
     max_frames = 120;
