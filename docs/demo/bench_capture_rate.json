@@ -1,0 +1,26 @@
+{
+  "port": "COM7",
+  "baud": 115200,
+  "panel": "320x240 rgb565be base64 ESPREC1",
+  "model": "host-paced single shot (no device multi-frame spool)",
+  "identity_idle_rtt_s": 0.05949799995869398,
+  "identity_idle": "fw_name=XUSSC fw_version=0.0.1",
+  "identity_after_shot_rtt_s": 0.06278219993691891,
+  "identity_after_shot": "fw_name=XUSSC fw_version=0.0.1",
+  "shot_times_s": [
+    18.4577888000058,
+    18.502566699986346,
+    18.500119099975564
+  ],
+  "shot_mean_s": 18.486824866655905,
+  "shot_min_s": 18.4577888000058,
+  "shot_max_s": 18.502566699986346,
+  "max_sustainable_host_paced_fps": 0.054092577130628205,
+  "recommended_keyframe_gif_delay_ms": 1000,
+  "recommended_living_sample_gif_delay_ms": 400,
+  "notes": [
+    "Do not set continuous --hz above ~0.05 at 115200 full panel; wasted waits.",
+    "UI blocked during emit; schedule keyframes after settle, not mid-action.",
+    "For true continuous session GIFs, need device ring-buffer spool (esprec issue)."
+  ]
+}
