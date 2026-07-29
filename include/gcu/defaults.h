@@ -9,6 +9,8 @@
 #define GCU_BANNER_STEP_MS 20
 #define GCU_DEBOUNCE_MS 40
 #define GCU_SAMPLE_RATE_HZ 22050
+/* Full-track First.pcm was authored at 44.1 kHz (22 kHz play = half-speed). */
+#define GCU_SONG_SAMPLE_RATE_HZ 44100
 #define GCU_DETAILS_PERIOD_MS 100
 
 /* M5GO pin pack (board-profile m5go candidates). */
@@ -39,6 +41,7 @@ typedef struct {
   int banner_step_ms;
   int debounce_ms;
   int sample_rate_hz;
+  int song_sample_rate_hz;
 } gcu_defaults_t;
 
 /* Single shipped table (product path must use this, not parallel literals). */

@@ -67,6 +67,7 @@ typedef struct {
   const uint8_t *song_pcm;
   int song_pcm_len;
   int sample_rate_hz;
+  int song_sample_rate_hz;
   int song_offset;
   int boot_done;
 } gcu_state_t;

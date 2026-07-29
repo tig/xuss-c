@@ -7,4 +7,5 @@ const gcu_defaults_t GCU_DEFAULTS = {
     .banner_step_ms = GCU_BANNER_STEP_MS,
     .debounce_ms = GCU_DEBOUNCE_MS,
     .sample_rate_hz = GCU_SAMPLE_RATE_HZ,
+    .song_sample_rate_hz = GCU_SONG_SAMPLE_RATE_HZ,
 };

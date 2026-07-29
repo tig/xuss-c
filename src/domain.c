@@ -75,6 +75,7 @@ void gcu_init(gcu_state_t *st, gcu_hal_t *hal) {
   st->banner_step_ms = GCU_DEFAULTS.banner_step_ms;
   st->debounce_ms = GCU_DEFAULTS.debounce_ms;
   st->sample_rate_hz = GCU_DEFAULTS.sample_rate_hz;
+  st->song_sample_rate_hz = GCU_DEFAULTS.song_sample_rate_hz;
   st->screen = GCU_SCREEN_FACE;
   st->theme = GCU_THEME_BLUE;
   st->music = GCU_MUSIC_IDLE;
@@ -177,13 +178,13 @@ static void handle_buttons(gcu_state_t *st, int64_t now) {
         if (off < 0 || off >= song_sz) {
           off = 0;
         }
-        ok = st->hal->play_file(st->hal, path, st->sample_rate_hz, off);
+        ok = st->hal->play_file(st->hal, path, st->song_sample_rate_hz, off);
       } else if (st->song_pcm && st->song_pcm_len > 0 && st->hal->play_pcm) {
         if (off < 0 || off >= st->song_pcm_len) {
           off = 0;
         }
         ok = st->hal->play_pcm(st->hal, st->song_pcm + off,
-                               st->song_pcm_len - off, st->sample_rate_hz);
+                               st->song_pcm_len - off, st->song_sample_rate_hz);
       } else if (st->boot_pcm && st->boot_pcm_len > 0 && st->hal->play_pcm) {
         /* Fallback stand-in if SPIFFS First.pcm missing. */
         ok = st->hal->play_pcm(st->hal, st->boot_pcm, st->boot_pcm_len,

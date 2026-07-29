@@ -72,7 +72,7 @@ static int i2s_open(int sample_rate) {
 static size_t expand_u8(const uint8_t *src, int n, int16_t *dst) {
   for (int i = 0; i < n; i++) {
     int v = (int)src[i] - 128;
-    v *= 2;
+    v *= 4; /* soft product masters need more headroom on tiny M5 speaker */
     if (v > 127) {
       v = 127;
     }
