@@ -37,16 +37,18 @@ static int i2s_open(int sample_rate) {
     i2s_driver_uninstall(I2S_NUM);
     s_i2s_ready = 0;
   }
+  /* Stereo DMA slots with both DAC channels; we put mono on both.
+   * ONLY_RIGHT was clocking content ~2× too fast on this board. */
   i2s_config_t cfg = {
       .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
       .sample_rate = sample_rate,
       .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-      .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, /* DAC1 / GPIO25 */
+      .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
       .communication_format = I2S_COMM_FORMAT_STAND_MSB,
       .intr_alloc_flags = 0,
       .dma_buf_count = 8,
       .dma_buf_len = 256,
-      .use_apll = false,
+      .use_apll = true,
       .tx_desc_auto_clear = true,
       .fixed_mclk = 0,
   };
@@ -55,46 +57,53 @@ static int i2s_open(int sample_rate) {
     ESP_LOGE(TAG, "i2s install: %s", esp_err_to_name(err));
     return -1;
   }
-  err = i2s_set_dac_mode(I2S_DAC_CHANNEL_RIGHT_EN);
+  err = i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "i2s dac mode: %s", esp_err_to_name(err));
     i2s_driver_uninstall(I2S_NUM);
     return -1;
   }
+  err = i2s_set_clk(I2S_NUM, sample_rate, I2S_BITS_PER_SAMPLE_16BIT,
+                    I2S_CHANNEL_STEREO);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "i2s_set_clk: %s", esp_err_to_name(err));
+  }
   s_rate = sample_rate;
   s_i2s_ready = 1;
-  ESP_LOGI(TAG, "I2S DAC ready GPIO25 @ %d Hz", sample_rate);
+  ESP_LOGI(TAG, "I2S DAC stereo→both GPIO25/26 @ %d Hz", sample_rate);
   return 0;
 }
 
-/* Expand u8 mono → 16-bit samples for I2S DAC (value in high byte).
- * Soft masters (First.pcm mean-dev is low) get ~2× digital gain, clipped. */
+/* Expand u8 mono → stereo 16-bit frames (L=R) for I2S DAC.
+ * Soft masters get 4× digital gain, clipped. */
 static size_t expand_u8(const uint8_t *src, int n, int16_t *dst) {
   for (int i = 0; i < n; i++) {
     int v = (int)src[i] - 128;
-    v *= 4; /* soft product masters need more headroom on tiny M5 speaker */
+    v *= 4;
     if (v > 127) {
       v = 127;
     }
     if (v < -128) {
       v = -128;
     }
-    dst[i] = (int16_t)((uint16_t)(v + 128) << 8);
+    int16_t s = (int16_t)((uint16_t)(v + 128) << 8);
+    dst[i * 2] = s;     /* left */
+    dst[i * 2 + 1] = s; /* right / GPIO25 DAC1 often mapped here */
   }
-  return (size_t)n * sizeof(int16_t);
+  return (size_t)n * 2u * sizeof(int16_t);
 }
 
 static void park_quiet(void) {
   if (!s_i2s_ready) {
     return;
   }
-  int16_t mid[64];
-  for (int i = 0; i < 64; i++) {
+  int16_t mid[128];
+  for (int i = 0; i < 128; i++) {
     mid[i] = (int16_t)(128 << 8);
   }
   size_t w = 0;
   (void)i2s_write(I2S_NUM, mid, sizeof mid, &w, pdMS_TO_TICKS(50));
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < 128; i++) {
     mid[i] = 0;
   }
   (void)i2s_write(I2S_NUM, mid, sizeof mid, &w, pdMS_TO_TICKS(50));
@@ -104,7 +113,7 @@ static void audio_task(void *arg) {
   (void)arg;
   const int chunk = 512;
   uint8_t u8[512];
-  int16_t s16[512];
+  int16_t s16[512 * 2]; /* stereo L/R */
   FILE *fp = NULL;
   int off = s_start_off;
   s_pos = off;
