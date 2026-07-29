@@ -378,10 +378,10 @@ static void paint_face_full(gcu_state_t *st) {
   paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
   paint_eye(hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
 
-  /* Smile */
-  hal->fill_rect(hal, 100, 150, 120, 8, c.fg565);
-  hal->fill_rect(hal, 100, 150, 8, 24, c.fg565);
-  hal->fill_rect(hal, 212, 150, 8, 24, c.fg565);
+  /* Smile (U shape: side posts rise from a lower bar). */
+  hal->fill_rect(hal, 100, 168, 120, 8, c.fg565);
+  hal->fill_rect(hal, 100, 150, 8, 26, c.fg565);
+  hal->fill_rect(hal, 212, 150, 8, 26, c.fg565);
 
   /* Playing cue */
   if (st->music == GCU_MUSIC_PLAYING) {

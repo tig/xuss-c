@@ -18,6 +18,14 @@
 static const char *TAG = "display";
 static esp_lcd_panel_handle_t s_panel;
 static int s_ready;
+/* Half-res shadow for esprec (full 320x240 BSS overflows DRAM on classic ESP32). */
+#define SHADOW_W (GCU_LCD_W / 2)
+#define SHADOW_H (GCU_LCD_H / 2)
+static uint16_t s_fb[SHADOW_W * SHADOW_H];
+
+int display_width(void) { return SHADOW_W; }
+int display_height(void) { return SHADOW_H; }
+const uint16_t *display_framebuffer(void) { return s_ready ? s_fb : NULL; }
 
 int display_init(void) {
   if (s_ready) {
@@ -93,6 +101,31 @@ void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
   }
   if (w <= 0 || h <= 0) {
     return;
+  }
+
+  /* Update half-res shadow (nearest) then push full-res rect to panel. */
+  if (s_ready) {
+    int x0 = x / 2;
+    int y0 = y / 2;
+    int x1 = (x + w + 1) / 2;
+    int y1 = (y + h + 1) / 2;
+    if (x0 < 0) {
+      x0 = 0;
+    }
+    if (y0 < 0) {
+      y0 = 0;
+    }
+    if (x1 > SHADOW_W) {
+      x1 = SHADOW_W;
+    }
+    if (y1 > SHADOW_H) {
+      y1 = SHADOW_H;
+    }
+    for (int sy = y0; sy < y1; sy++) {
+      for (int sx = x0; sx < x1; sx++) {
+        s_fb[sy * SHADOW_W + sx] = rgb565;
+      }
+    }
   }
 
   /* Chunked solid fill to keep stack/heap modest. */

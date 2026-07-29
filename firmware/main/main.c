@@ -4,6 +4,9 @@
 #include "gcu/version.h"
 #include "hal_board.h"
 
+#include "display.h"
+#include "esprec.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -56,6 +59,17 @@ static void drain_identity_command(void) {
           gcu_identity_line(id, (int)sizeof id);
           printf("%s\n", id);
           fflush(stdout);
+        } else if (strcmp(p, "shot") == 0 || strcmp(p, "esprec shot") == 0) {
+          /* display_framebuffer is already half-res (DRAM budget). */
+          const uint16_t *fb = display_framebuffer();
+          const int fw = display_width();
+          const int fh = display_height();
+          if (fb && fw > 0 && fh > 0) {
+            (void)esprec_emit_rgb565_spi_be(fb, fw, fh);
+          } else {
+            printf("err shot no_framebuffer\n");
+            fflush(stdout);
+          }
         }
         n = 0;
       }
