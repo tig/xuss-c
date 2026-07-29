@@ -374,11 +374,13 @@ static void draw_text(gcu_hal_t *hal, int x, int y, const char *s, uint16_t fg,
 
 /* Face layout constants — partial paints must match full paints. */
 enum {
-  GCU_EYE_Y = 78,
+  GCU_EYE_Y = 70,
   GCU_EYE_LX = 110,
   GCU_EYE_RX = 210,
-  GCU_HINT_Y0 = 192,
-  GCU_HINT_H = 48,
+  GCU_SMILE_CY = 112,
+  GCU_TITLE_Y = 162,
+  GCU_HINT_Y0 = 200,
+  GCU_HINT_H = 40,
 };
 
 /* Glyph hints per spec: color swatches / play-pause / gear. */
@@ -627,9 +629,9 @@ static void paint_face_full(gcu_state_t *st) {
   /* Smile arc higher on the panel. */
   {
     const int scx = 160;
-    const int scy = 120;
-    const int ro = 44;
-    const int ri = 34;
+    const int scy = GCU_SMILE_CY;
+    const int ro = 40;
+    const int ri = 30;
     for (int y = 8; y <= ro; y++) {
       int x_out = 0, x_in = 0;
       for (int t = ro; t >= 0; t--) {
@@ -655,7 +657,7 @@ static void paint_face_full(gcu_state_t *st) {
     }
   }
 
-  /* Playing cue centered under face, above button glyphs. */
+  /* Playing cue centered; gap above icons so descenders are not clipped. */
   if (st->music == GCU_MUSIC_PLAYING) {
     const char *title = "First by Tig";
     int tw = (int)strlen(title) * 12; /* scale-2: 6px * 2 */
@@ -663,8 +665,9 @@ static void paint_face_full(gcu_state_t *st) {
     if (tx < 0) {
       tx = 0;
     }
-    hal->fill_rect(hal, 0, 178, GCU_LCD_W, 18, c.bg565);
-    draw_text(hal, tx, 180, title, c.ink565, c.bg565, 2);
+    /* scale-2 text is 14px tall; leave clear air before GCU_HINT_Y0 */
+    hal->fill_rect(hal, 0, GCU_TITLE_Y - 2, GCU_LCD_W, 20, c.bg565);
+    draw_text(hal, tx, GCU_TITLE_Y, title, c.ink565, c.bg565, 2);
   }
 
   paint_button_glyphs(hal, st, &c);
