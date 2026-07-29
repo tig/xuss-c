@@ -610,17 +610,17 @@ static void paint_face_full(gcu_state_t *st) {
   /* Hair bar + banner (scale 1 for denser scroll; soft-step in tick). */
   paint_banner(st, &c);
 
-  /* Eyes */
-  paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
-  paint_eye(hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
+  /* Eyes (face shifted up so play cue never covers smile). */
+  paint_eye(hal, 110, 78, 0, c.fg565, c.bg565);
+  paint_eye(hal, 210, 78, st->wink_closed, c.fg565, c.bg565);
 
-  /* Reimagined smile: thick lower semicircle (emoji-friendly). */
+  /* Smile arc higher on the panel. */
   {
     const int scx = 160;
-    const int scy = 145;
-    const int ro = 48;
-    const int ri = 38;
-    for (int y = 8; y <= ro; y++) { /* skip top of circle → smile only */
+    const int scy = 120;
+    const int ro = 44;
+    const int ri = 34;
+    for (int y = 8; y <= ro; y++) {
       int x_out = 0, x_in = 0;
       for (int t = ro; t >= 0; t--) {
         if (y * y + t * t <= ro * ro) {
@@ -638,7 +638,6 @@ static void paint_face_full(gcu_state_t *st) {
         int ypix = scy + y;
         hal->fill_rect(hal, scx - x_out, ypix, x_out - x_in, 1, c.fg565);
         hal->fill_rect(hal, scx + x_in, ypix, x_out - x_in, 1, c.fg565);
-        /* bridge the bottom of the smile */
         if (y > ri - 2) {
           hal->fill_rect(hal, scx - x_out, ypix, x_out * 2, 2, c.fg565);
         }
@@ -646,9 +645,16 @@ static void paint_face_full(gcu_state_t *st) {
     }
   }
 
-  /* Playing cue */
+  /* Playing cue centered under face, above button glyphs. */
   if (st->music == GCU_MUSIC_PLAYING) {
-    draw_text(hal, 60, 185, "First by Tig", c.ink565, c.bg565, 2);
+    const char *title = "First by Tig";
+    int tw = (int)strlen(title) * 12; /* scale-2: 6px * 2 */
+    int tx = (GCU_LCD_W - tw) / 2;
+    if (tx < 0) {
+      tx = 0;
+    }
+    hal->fill_rect(hal, 0, 178, GCU_LCD_W, 18, c.bg565);
+    draw_text(hal, tx, 180, title, c.ink565, c.bg565, 2);
   }
 
   paint_button_glyphs(hal, st, &c);

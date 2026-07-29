@@ -79,7 +79,7 @@ static int i2s_open(int sample_rate) {
 static size_t expand_u8(const uint8_t *src, int n, int16_t *dst) {
   for (int i = 0; i < n; i++) {
     int v = (int)src[i] - 128;
-    v *= 4;
+    v *= 2; /* 4× distorted on M5 amp; 2× is desk-loud without clipping */
     if (v > 127) {
       v = 127;
     }
