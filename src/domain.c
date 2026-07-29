@@ -348,45 +348,58 @@ static void draw_text(gcu_hal_t *hal, int x, int y, const char *s, uint16_t fg,
   }
 }
 
-/* Glyph hints (not text labels): palette / play-pause / gear. */
+/* Glyph hints per spec: color swatches / play-pause / gear. */
 static void paint_button_glyphs(gcu_hal_t *hal, gcu_state_t *st,
                                 const gcu_theme_colors_t *c) {
   if (!hal || !hal->fill_rect || !st || !c) {
     return;
   }
-  /* Clear hint strip */
-  hal->fill_rect(hal, 0, 205, GCU_LCD_W, 35, c->bg565);
+  hal->fill_rect(hal, 0, 200, GCU_LCD_W, 40, c->bg565);
 
-  /* Left: color swatches (3 mini blocks). */
-  int lx = 28;
-  int ly = 214;
-  uint16_t sw[] = {rgb565(40, 140, 255), rgb565(255, 140, 0), rgb565(40, 220, 80)};
-  for (int i = 0; i < 3; i++) {
-    hal->fill_rect(hal, lx + i * 14, ly, 12, 12, sw[i]);
-  }
-
-  /* Middle: play triangle or pause bars. */
-  int mx = 150;
-  int my = 212;
-  if (st->music == GCU_MUSIC_PLAYING) {
-    hal->fill_rect(hal, mx, my, 6, 18, c->ink565);
-    hal->fill_rect(hal, mx + 12, my, 6, 18, c->ink565);
-  } else {
-    for (int row = 0; row < 18; row++) {
-      int w = 2 + row / 2;
-      if (w > 12) {
-        w = 12;
-      }
-      hal->fill_rect(hal, mx, my + row, w, 1, c->ink565);
+  /* Left (A): cycle-color glyph — four theme chips in a 2x2. */
+  {
+    int lx = 24, ly = 208;
+    uint16_t sw[] = {rgb565(40, 140, 255), rgb565(255, 140, 0),
+                     rgb565(255, 40, 40), rgb565(40, 220, 80)};
+    for (int i = 0; i < 4; i++) {
+      int col = i % 2;
+      int row = i / 2;
+      hal->fill_rect(hal, lx + col * 16, ly + row * 12, 14, 10, sw[i]);
     }
   }
 
-  /* Right: simple gear (hub + teeth). */
-  int gx = 268;
-  int gy = 218;
-  hal->fill_rect(hal, gx + 6, gy, 8, 16, c->ink565);
-  hal->fill_rect(hal, gx, gy + 6, 20, 8, c->ink565);
-  hal->fill_rect(hal, gx + 8, gy + 8, 4, 4, c->bg565);
+  /* Middle (B): filled play triangle ▶ or pause ║. */
+  {
+    int mx = 148, my = 206;
+    if (st->music == GCU_MUSIC_PLAYING) {
+      hal->fill_rect(hal, mx + 2, my, 7, 22, c->ink565);
+      hal->fill_rect(hal, mx + 14, my, 7, 22, c->ink565);
+    } else {
+      /* Right-pointing triangle via growing then shrinking rows. */
+      for (int row = 0; row < 22; row++) {
+        int from_mid = row < 11 ? row : (21 - row);
+        int w = 4 + from_mid * 2;
+        if (w > 20) {
+          w = 20;
+        }
+        hal->fill_rect(hal, mx, my + row, w, 1, c->ink565);
+      }
+    }
+  }
+
+  /* Right (C): gear — ring with teeth + hub hole. */
+  {
+    int gx = 262, gy = 208;
+    /* Outer teeth (cross + diagonals via blocks). */
+    hal->fill_rect(hal, gx + 8, gy, 10, 4, c->ink565);
+    hal->fill_rect(hal, gx + 8, gy + 22, 10, 4, c->ink565);
+    hal->fill_rect(hal, gx, gy + 8, 4, 10, c->ink565);
+    hal->fill_rect(hal, gx + 22, gy + 8, 4, 10, c->ink565);
+    /* Body */
+    hal->fill_rect(hal, gx + 4, gy + 4, 18, 18, c->ink565);
+    /* Hub */
+    hal->fill_rect(hal, gx + 10, gy + 10, 6, 6, c->bg565);
+  }
 }
 
 static void paint_banner(gcu_state_t *st, const gcu_theme_colors_t *c) {
@@ -394,13 +407,12 @@ static void paint_banner(gcu_state_t *st, const gcu_theme_colors_t *c) {
   if (!hal || !hal->fill_rect || !c) {
     return;
   }
-  /* Clear hair bar then draw text once per step (scale 1 = less SPI thrash). */
-  hal->fill_rect(hal, 0, 0, GCU_LCD_W, 28, c->hair565);
-  draw_text(hal, GCU_LCD_W - st->banner_px, 10, GCU_BANNER_TEXT, c->ink565,
-            c->hair565, 1);
-  /* Second copy for seamless loop. */
-  draw_text(hal, GCU_LCD_W - st->banner_px + 200, 10, GCU_BANNER_TEXT, c->ink565,
-            c->hair565, 1);
+  /* Scale 2 for readable banner; dual copy for seamless loop. */
+  hal->fill_rect(hal, 0, 0, GCU_LCD_W, 32, c->hair565);
+  draw_text(hal, GCU_LCD_W - st->banner_px, 8, GCU_BANNER_TEXT, c->ink565,
+            c->hair565, 2);
+  draw_text(hal, GCU_LCD_W - st->banner_px + 320, 8, GCU_BANNER_TEXT, c->ink565,
+            c->hair565, 2);
 }
 
 static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
@@ -408,12 +420,21 @@ static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
   if (!hal || !hal->fill_rect) {
     return;
   }
-  /* Clear eye region then draw open circle-ish or closed line. */
-  hal->fill_rect(hal, cx - 18, cy - 14, 36, 28, bg);
+  /* Clear including brow band. */
+  hal->fill_rect(hal, cx - 20, cy - 28, 40, 48, bg);
+  /* Eyebrow */
+  hal->fill_rect(hal, cx - 14, cy - 24, 28, 5, fg);
   if (closed) {
-    hal->fill_rect(hal, cx - 14, cy - 2, 28, 4, fg);
+    /* Closed lid: thick arc-ish bar. */
+    for (int i = 0; i < 4; i++) {
+      int inset = i;
+      hal->fill_rect(hal, cx - 14 + inset, cy - 2 + i, 28 - 2 * inset, 2, fg);
+    }
   } else {
-    hal->fill_rect(hal, cx - 12, cy - 12, 24, 24, fg);
+    /* Round-ish eye: concentric squares (coarse circle). */
+    hal->fill_rect(hal, cx - 12, cy - 10, 24, 24, fg);
+    hal->fill_rect(hal, cx - 10, cy - 12, 20, 28, fg);
+    /* Pupil */
     hal->fill_rect(hal, cx - 5, cy - 5, 10, 10, bg);
   }
 }
@@ -433,10 +454,20 @@ static void paint_face_full(gcu_state_t *st) {
   paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
   paint_eye(hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
 
-  /* Smile (U shape: side posts rise from a lower bar). */
-  hal->fill_rect(hal, 100, 168, 120, 8, c.fg565);
-  hal->fill_rect(hal, 100, 150, 8, 26, c.fg565);
-  hal->fill_rect(hal, 212, 150, 8, 26, c.fg565);
+  /* Rounder smile: stepped arc (U). */
+  {
+    const int smy = 155;
+    /* bottom curve */
+    hal->fill_rect(hal, 120, smy + 22, 80, 6, c.fg565);
+    /* lower sides */
+    hal->fill_rect(hal, 108, smy + 14, 14, 14, c.fg565);
+    hal->fill_rect(hal, 198, smy + 14, 14, 14, c.fg565);
+    /* upper corners */
+    hal->fill_rect(hal, 100, smy + 4, 12, 14, c.fg565);
+    hal->fill_rect(hal, 208, smy + 4, 12, 14, c.fg565);
+    /* clear inner so it is a stroke, not a block */
+    hal->fill_rect(hal, 118, smy + 10, 84, 16, c.bg565);
+  }
 
   /* Playing cue */
   if (st->music == GCU_MUSIC_PLAYING) {
