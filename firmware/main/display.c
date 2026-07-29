@@ -81,6 +81,11 @@ int display_init(void) {
   return 0;
 }
 
+/* SPI bulk blit wants big-endian RGB565 words (knowledge/esp32-lcd-ips). */
+static inline uint16_t rgb565_spi_be(uint16_t native) {
+  return (uint16_t)((native >> 8) | (native << 8));
+}
+
 void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
   if (!s_ready || !s_panel || w <= 0 || h <= 0) {
     return;
@@ -103,7 +108,9 @@ void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
     return;
   }
 
-  /* Update half-res shadow (nearest) then push full-res rect to panel. */
+  const uint16_t wire = rgb565_spi_be(rgb565);
+
+  /* Half-res shadow stores spi_be words so esprec pack=spi_be matches glass. */
   if (s_ready) {
     int x0 = x / 2;
     int y0 = y / 2;
@@ -123,7 +130,7 @@ void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
     }
     for (int sy = y0; sy < y1; sy++) {
       for (int sx = x0; sx < x1; sx++) {
-        s_fb[sy * SHADOW_W + sx] = rgb565;
+        s_fb[sy * SHADOW_W + sx] = wire;
       }
     }
   }
@@ -136,7 +143,7 @@ void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
     return;
   }
   for (int i = 0; i < w * chunk_h; i++) {
-    buf[i] = rgb565;
+    buf[i] = wire;
   }
   for (int row = 0; row < h; row += chunk_h) {
     int hh = h - row;
@@ -145,7 +152,7 @@ void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
     }
     if (hh < chunk_h) {
       for (int i = 0; i < w * hh; i++) {
-        buf[i] = rgb565;
+        buf[i] = wire;
       }
     }
     esp_lcd_panel_draw_bitmap(s_panel, x, y + row, x + w, y + row + hh, buf);
