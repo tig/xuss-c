@@ -4,4 +4,11 @@ __pycache__/
 .venv/
 .pytest_cache/
 build/
+firmware/build/
+firmware/managed_components/
+firmware/dependencies.lock
+firmware/sdkconfig
+firmware/sdkconfig.old
 *.pyc
+capture/
+

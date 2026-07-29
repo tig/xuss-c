@@ -1,0 +1,18 @@
+# Part truth: pointers, not documents (silico AGENTS).
+# Run `silico parts --fetch` for local grounding copies (.silico/parts/, git-ignored).
+
+[[part]]
+id = "esp32"
+name = "Espressif ESP32"
+role = "mcu"
+datasheet = "https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf"
+driver = "https://github.com/espressif/esp-idf"
+notes = "Classic dual-core Xtensa; M5GO core uses ESP32-D0WD."
+
+[[part]]
+id = "m5go"
+name = "M5Stack M5GO IoT Starter Kit v2.7"
+role = "board"
+profile = "m5go"
+docs = "https://docs.m5stack.com/en/core/m5go"
+notes = "IPS ILI9342C, speaker GPIO25, side SK6812x10 on GPIO15, buttons 39/38/37, IMU MPU6886."

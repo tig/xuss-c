@@ -1,7 +1,8 @@
 #ifndef GCU_VERSION_H
 #define GCU_VERSION_H
 
-#define GCU_FW_NAME "Xuss-C"
-#define GCU_FW_VERSION "0.0.1"
+/* Product contract: fw_name=XUSSC (spec §1 twin table). */
+#define GCU_FW_NAME "XUSSC"
+#define GCU_FW_VERSION "0.1.0"
 
 #endif

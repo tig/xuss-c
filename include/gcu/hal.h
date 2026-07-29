@@ -8,13 +8,23 @@
 typedef struct gcu_hal gcu_hal_t;
 
 struct gcu_hal {
+  /* Legacy plate LED (unused when set_side_rgb is present). */
   void (*set_led)(gcu_hal_t *self, int on);
+  /* Side strip solid color (0,0,0 = off). */
+  void (*set_side_rgb)(gcu_hal_t *self, uint8_t r, uint8_t g, uint8_t b);
   void (*delay_ms)(gcu_hal_t *self, int ms);
-  /* Monotonic wall clock in milliseconds since boot, or NULL if the board
-   * has none. MUST be int64_t: on ESP32 (ILP32) `long` is 32 bits, so
-   * millisecond math in `long` overflows in <10 h and wraps at ~24.8 days.
-   * Host `long` is 64-bit and hides the trap — see host/test_time.c. */
+  /* Monotonic ms since boot. MUST be int64_t (ESP32 long is 32-bit). */
   int64_t (*now_ms)(gcu_hal_t *self);
+  /* RGB565 fill of axis-aligned rect. */
+  void (*fill_rect)(gcu_hal_t *self, int x, int y, int w, int h, uint16_t rgb565);
+  /* Active-low buttons: 1 = pressed. */
+  int (*btn_a)(gcu_hal_t *self);
+  int (*btn_b)(gcu_hal_t *self);
+  int (*btn_c)(gcu_hal_t *self);
+  /* Start non-blocking PCM (u8 mono). Returns 0 ok, non-zero if busy/missing. */
+  int (*play_pcm)(gcu_hal_t *self, const uint8_t *data, int len, int sample_rate);
+  int (*audio_busy)(gcu_hal_t *self);
+  void (*audio_stop)(gcu_hal_t *self);
 };
 
 #endif

@@ -11,14 +11,13 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Embedded boot riff (u8 mono @ GCU_SAMPLE_RATE_HZ). */
+extern const uint8_t _binary_boot_riff_pcm_start[];
+extern const uint8_t _binary_boot_riff_pcm_end[];
+
 /*
- * Identity on the link (#78 / #79): boot-print alone is not enough for
- * silico inspect after the greeting scrolls past. The app must also answer
- * the host word "identity" (CR/LF framed) with fw_name=… fw_version=….
- *
- * stdin MUST be non-blocking before the forever loop. Blocking getchar()
- * would park app_main and kill the product face (tick/LED) until a host
- * line arrives.
+ * Identity on the link (#78 / #79): answer "identity" with fw_name=… fw_version=….
+ * stdin non-blocking so product face tick is never parked.
  */
 static int g_stdin_nonblock;
 
@@ -41,10 +40,9 @@ static void drain_identity_command(void) {
   int c;
 
   if (!g_stdin_nonblock) {
-    return; /* never block the product face */
+    return;
   }
 
-  /* Drain only ready bytes; empty stdin yields EOF/EAGAIN immediately. */
   while ((c = getchar()) != EOF) {
     if (c == '\r' || c == '\n') {
       if (n > 0) {
@@ -66,12 +64,9 @@ static void drain_identity_command(void) {
     if (n < (int)sizeof(line) - 1) {
       line[n++] = (char)c;
     } else {
-      n = 0; /* overflow: drop */
+      n = 0;
     }
   }
-  /* Clear sticky stream state after empty non-blocking reads: EOF/error
-   * flags latch on FILE* and errno keeps EAGAIN. Without both resets the
-   * NEXT drain can see a phantom EOF and never read again (#87). */
   clearerr(stdin);
   if (errno == EAGAIN || errno == EWOULDBLOCK) {
     errno = 0;
@@ -81,8 +76,6 @@ static void drain_identity_command(void) {
 void app_main(void) {
   char id[64];
   gcu_state_t st;
-  /* HAL init must stay reachable from app_main (silico gate checks this).
-   * Do not move the forever loop without gcu_make_board_hal + gcu_init (#79). */
   gcu_hal_t *hal = gcu_make_board_hal();
 
   gcu_identity_line(id, (int)sizeof id);
@@ -91,12 +84,18 @@ void app_main(void) {
 
   stdin_set_nonblocking();
   if (!g_stdin_nonblock) {
-    printf("WARN: stdin not non-blocking; identity knock drain disabled "
-           "(product face tick continues)\n");
+    printf("WARN: stdin not non-blocking; identity knock drain disabled\n");
     fflush(stdout);
   }
 
+  int boot_len =
+      (int)(_binary_boot_riff_pcm_end - _binary_boot_riff_pcm_start);
   gcu_init(&st, hal);
+  gcu_set_assets(&st, _binary_boot_riff_pcm_start, boot_len, NULL, 0,
+                 GCU_SAMPLE_RATE_HZ);
+  /* Boot riff ~2.5s — operator may hear speaker greeting. */
+  gcu_start_boot(&st);
+
   for (;;) {
     drain_identity_command();
     gcu_tick(&st);

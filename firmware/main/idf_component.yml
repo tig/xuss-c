@@ -1,0 +1,4 @@
+## Managed components for M5GO product face (display + side strip).
+dependencies:
+  espressif/led_strip: "^2.5.0"
+  espressif/esp_lcd_ili9341: "^2.0.0"
