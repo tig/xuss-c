@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 #include <string.h>
+/* memmove for banner scroll */
+#include <string.h>
 
 /* RGB888 → RGB565. Panel is configured BGR+invert; do not also swap here
  * (double-swap made dark-blue themes read as purple on M5GO glass). */
@@ -213,10 +215,9 @@ static void advance_wink_banner(gcu_state_t *st, int64_t now) {
 
   if (now - st->last_banner_ms >= (int64_t)st->banner_step_ms) {
     st->last_banner_ms = now;
-    st->banner_px += 1; /* 1px/step at ~25 Hz reads smoother than 2px jumps */
-    if (st->banner_px > 360) {
-      st->banner_px = 0;
-    }
+    /* Period matches dual-copy spacing so wrap is seamless (no full erase jump). */
+    const int period = (int)strlen(GCU_BANNER_TEXT) * 6 * 2 + 48;
+    st->banner_px = (st->banner_px + 1) % (period > 1 ? period : 1);
     st->needs_banner_paint = 1;
   }
 }
@@ -432,22 +433,73 @@ static void paint_banner(gcu_state_t *st, const gcu_theme_colors_t *c) {
   if (!hal || !c) {
     return;
   }
-  /* Single-strip compose + one blit (avoids per-glyph SPI thrash). */
-  enum { BH = 28 };
+  /*
+   * Scroll by shifting the strip left 1px and painting only the new right
+   * column contents from a long virtual ribbon — no full-bar wipe.
+   */
+  enum { BH = 28, SCALE = 2 };
   static uint16_t strip[GCU_LCD_W * BH];
-  for (int i = 0; i < GCU_LCD_W * BH; i++) {
-    strip[i] = c->hair565;
-  }
-  const int scale = 2;
-  const int text_w = (int)strlen(GCU_BANNER_TEXT) * 6 * scale;
-  int x0 = GCU_LCD_W - st->banner_px;
-  for (int copy = 0; copy < 2; copy++) {
-    int cx = x0 + copy * (text_w + 48);
-    for (const char *p = GCU_BANNER_TEXT; *p; p++) {
-      stamp_char(strip, GCU_LCD_W, BH, cx, 6, *p, c->ink565, c->hair565, scale);
-      cx += 6 * scale;
+  static uint16_t last_hair, last_ink;
+  static int primed;
+  const int period = (int)strlen(GCU_BANNER_TEXT) * 6 * SCALE + 48;
+
+  if (!primed || last_hair != c->hair565 || last_ink != c->ink565 ||
+      st->needs_full_paint) {
+    for (int i = 0; i < GCU_LCD_W * BH; i++) {
+      strip[i] = c->hair565;
+    }
+    int x0 = -st->banner_px;
+    while (x0 < GCU_LCD_W) {
+      int cx = x0;
+      for (const char *p = GCU_BANNER_TEXT; *p; p++) {
+        stamp_char(strip, GCU_LCD_W, BH, cx, 6, *p, c->ink565, c->hair565, SCALE);
+        cx += 6 * SCALE;
+      }
+      x0 += period;
+    }
+    primed = 1;
+    last_hair = c->hair565;
+    last_ink = c->ink565;
+  } else {
+    /* Shift left 1px (content moves left = scroll right-to-left). */
+    for (int row = 0; row < BH; row++) {
+      uint16_t *line = strip + row * GCU_LCD_W;
+      memmove(line, line + 1, (size_t)(GCU_LCD_W - 1) * sizeof(uint16_t));
+      line[GCU_LCD_W - 1] = c->hair565;
+    }
+    /* Stamp any glyph pixels that belong in the new rightmost column. */
+    int virt = (st->banner_px + GCU_LCD_W - 1) % period;
+    /* Find which character column this virtual x maps to. */
+    int local = virt;
+    if (local < (int)strlen(GCU_BANNER_TEXT) * 6 * SCALE) {
+      int ci = local / (6 * SCALE);
+      int gx = local % (6 * SCALE);
+      if (ci >= 0 && ci < (int)strlen(GCU_BANNER_TEXT) && gx < 5 * SCALE) {
+        char ch = GCU_BANNER_TEXT[ci];
+        unsigned char uc = (unsigned char)ch;
+        if (uc >= 'a' && uc <= 'z') {
+          uc = (unsigned char)(uc - 'a' + 'A');
+        }
+        int idx = (uc >= 32 && uc <= 90) ? (int)(uc - 32) : 0;
+        int font_col = gx / SCALE;
+        int sub = gx % SCALE;
+        (void)sub;
+        if (font_col < 5) {
+          uint8_t bits = FONT5X7[idx][font_col];
+          for (int row = 0; row < 7; row++) {
+            uint16_t color = (bits & (1u << row)) ? c->ink565 : c->hair565;
+            for (int sy = 0; sy < SCALE; sy++) {
+              int py = 6 + row * SCALE + sy;
+              if (py >= 0 && py < BH) {
+                strip[py * GCU_LCD_W + (GCU_LCD_W - 1)] = color;
+              }
+            }
+          }
+        }
+      }
     }
   }
+
   if (hal->blit) {
     hal->blit(hal, 0, 0, GCU_LCD_W, BH, strip);
   } else if (hal->fill_rect) {
@@ -460,41 +512,65 @@ static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
   if (!hal || !hal->fill_rect) {
     return;
   }
-  /* Clean region — no under-eye bars. */
-  hal->fill_rect(hal, cx - 22, cy - 30, 44, 44, bg);
-  /* Eyebrow */
-  for (int i = 0; i < 3; i++) {
-    hal->fill_rect(hal, cx - 13 + i, cy - 26 + i / 2, 26 - 2 * i, 3, fg);
+  /* Soft classic emoji eye — clear only the eye disk, no under-lines. */
+  int clear_r = 16;
+  for (int dy = -clear_r; dy <= clear_r; dy++) {
+    int half = 0;
+    for (int t = clear_r; t >= 0; t--) {
+      if (dy * dy + t * t <= clear_r * clear_r) {
+        half = t;
+        break;
+      }
+    }
+    if (half > 0) {
+      hal->fill_rect(hal, cx - half, cy + dy - 8, half * 2, 1, bg);
+    }
   }
+  /* Light eyebrow above */
+  hal->fill_rect(hal, cx - 12, cy - 22, 24, 3, fg);
+
   if (closed) {
+    /* Friendly closed curve */
     for (int i = 0; i < 3; i++) {
-      int inset = i * 2;
-      hal->fill_rect(hal, cx - 12 + inset, cy - i, 24 - 2 * inset, 3, fg);
+      hal->fill_rect(hal, cx - 10 + i, cy - 1 + i, 20 - 2 * i, 2, fg);
     }
   } else {
-    int r = 11;
+    /* Outer ring */
+    int r = 12;
     for (int dy = -r; dy <= r; dy++) {
-      int half = 0;
+      int out_h = 0, in_h = 0;
       for (int t = r; t >= 0; t--) {
         if (dy * dy + t * t <= r * r) {
+          out_h = t;
+          break;
+        }
+      }
+      int ri = 5;
+      for (int t = ri; t >= 0; t--) {
+        if (dy * dy + t * t <= ri * ri) {
+          in_h = t;
+          break;
+        }
+      }
+      if (out_h > in_h) {
+        hal->fill_rect(hal, cx - out_h, cy + dy, out_h - in_h, 1, fg);
+        hal->fill_rect(hal, cx + in_h, cy + dy, out_h - in_h, 1, fg);
+      } else if (out_h > 0 && in_h == 0) {
+        /* top/bottom caps of ring — fill diameter for solid friendly dots */
+      }
+    }
+    /* Filled friendly pupil/dot */
+    int pr = 5;
+    for (int dy = -pr; dy <= pr; dy++) {
+      int half = 0;
+      for (int t = pr; t >= 0; t--) {
+        if (dy * dy + t * t <= pr * pr) {
           half = t;
           break;
         }
       }
       if (half > 0) {
         hal->fill_rect(hal, cx - half, cy + dy, half * 2, 1, fg);
-      }
-    }
-    for (int dy = -4; dy <= 4; dy++) {
-      int half = 0;
-      for (int t = 4; t >= 0; t--) {
-        if (dy * dy + t * t <= 16) {
-          half = t;
-          break;
-        }
-      }
-      if (half > 0) {
-        hal->fill_rect(hal, cx - half, cy + dy, half * 2, 1, bg);
       }
     }
   }
@@ -515,13 +591,13 @@ static void paint_face_full(gcu_state_t *st) {
   paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
   paint_eye(hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
 
-  /* Friendly smile: circular arc stroke (lower half). */
+  /* Reimagined smile: thick lower semicircle (emoji-friendly). */
   {
     const int scx = 160;
-    const int scy = 148;
-    const int ro = 42;
-    const int ri = 34;
-    for (int y = 0; y <= ro; y++) {
+    const int scy = 145;
+    const int ro = 48;
+    const int ri = 38;
+    for (int y = 8; y <= ro; y++) { /* skip top of circle → smile only */
       int x_out = 0, x_in = 0;
       for (int t = ro; t >= 0; t--) {
         if (y * y + t * t <= ro * ro) {
@@ -536,17 +612,12 @@ static void paint_face_full(gcu_state_t *st) {
         }
       }
       if (x_out > x_in) {
-        /* left and right segments of the arc ring */
         int ypix = scy + y;
-        int xl0 = scx - x_out;
-        int xl1 = scx - x_in;
-        int xr0 = scx + x_in;
-        int xr1 = scx + x_out;
-        if (xl1 > xl0) {
-          hal->fill_rect(hal, xl0, ypix, xl1 - xl0, 1, c.fg565);
-        }
-        if (xr1 > xr0) {
-          hal->fill_rect(hal, xr0, ypix, xr1 - xr0, 1, c.fg565);
+        hal->fill_rect(hal, scx - x_out, ypix, x_out - x_in, 1, c.fg565);
+        hal->fill_rect(hal, scx + x_in, ypix, x_out - x_in, 1, c.fg565);
+        /* bridge the bottom of the smile */
+        if (y > ri - 2) {
+          hal->fill_rect(hal, scx - x_out, ypix, x_out * 2, 2, c.fg565);
         }
       }
     }
