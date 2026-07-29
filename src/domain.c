@@ -372,13 +372,23 @@ static void draw_text(gcu_hal_t *hal, int x, int y, const char *s, uint16_t fg,
   }
 }
 
+/* Face layout constants — partial paints must match full paints. */
+enum {
+  GCU_EYE_Y = 78,
+  GCU_EYE_LX = 110,
+  GCU_EYE_RX = 210,
+  GCU_HINT_Y0 = 192,
+  GCU_HINT_H = 48,
+};
+
 /* Glyph hints per spec: color swatches / play-pause / gear. */
 static void paint_button_glyphs(gcu_hal_t *hal, gcu_state_t *st,
                                 const gcu_theme_colors_t *c) {
   if (!hal || !hal->fill_rect || !st || !c) {
     return;
   }
-  hal->fill_rect(hal, 0, 200, GCU_LCD_W, 40, c->bg565);
+  /* Clear full hint band (avoids 1px residual bars between icons). */
+  hal->fill_rect(hal, 0, GCU_HINT_Y0, GCU_LCD_W, GCU_HINT_H, c->bg565);
 
   /* Left (A): cycle-color glyph — four theme chips in a 2x2. */
   {
@@ -611,8 +621,8 @@ static void paint_face_full(gcu_state_t *st) {
   paint_banner(st, &c);
 
   /* Eyes (face shifted up so play cue never covers smile). */
-  paint_eye(hal, 110, 78, 0, c.fg565, c.bg565);
-  paint_eye(hal, 210, 78, st->wink_closed, c.fg565, c.bg565);
+  paint_eye(hal, GCU_EYE_LX, GCU_EYE_Y, 0, c.fg565, c.bg565);
+  paint_eye(hal, GCU_EYE_RX, GCU_EYE_Y, st->wink_closed, c.fg565, c.bg565);
 
   /* Smile arc higher on the panel. */
   {
@@ -666,38 +676,46 @@ static void paint_details_values(gcu_state_t *st, const gcu_theme_colors_t *c) {
     return;
   }
   char line[40];
-  /* Value strips only — labels stay put. */
-  const int x = 100;
-  const int w = 210;
+  /* Value strips only — labels stay put. Scale ~1.3× → use 2 for legibility. */
+  const int x = 90;
+  const int w = 220;
+  const int sc = 2;
+  const int row_h = 22;
   const gcu_sensors_t *s = &st->sensors;
+  int y = 78;
 
-  snprintf(line, sizeof line, "%+.2f %+.2f %+.2f", s->ax, s->ay, s->az);
-  hal->fill_rect(hal, x, 88, w, 14, c->bg565);
-  draw_text(hal, x, 88, line, c->ink565, c->bg565, 1);
+  snprintf(line, sizeof line, "%+.1f %+.1f %+.1f", s->ax, s->ay, s->az);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
+  y += row_h + 4;
 
-  snprintf(line, sizeof line, "%+.1f %+.1f %+.1f", s->gx, s->gy, s->gz);
-  hal->fill_rect(hal, x, 112, w, 14, c->bg565);
-  draw_text(hal, x, 112, line, c->ink565, c->bg565, 1);
+  snprintf(line, sizeof line, "%+.0f %+.0f %+.0f", s->gx, s->gy, s->gz);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
+  y += row_h + 4;
 
   snprintf(line, sizeof line, "%+.1f C", s->temp_c);
-  hal->fill_rect(hal, x, 136, w, 14, c->bg565);
-  draw_text(hal, x, 136, line, c->ink565, c->bg565, 1);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
+  y += row_h + 4;
 
   snprintf(line, sizeof line, "%d %d %d", s->btn_a, s->btn_b, s->btn_c);
-  hal->fill_rect(hal, x, 160, w, 14, c->bg565);
-  draw_text(hal, x, 160, line, c->ink565, c->bg565, 1);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
+  y += row_h + 4;
 
   snprintf(line, sizeof line, "%d", s->heap_free);
-  hal->fill_rect(hal, x, 184, w, 14, c->bg565);
-  draw_text(hal, x, 184, line, c->ink565, c->bg565, 1);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
+  y += row_h + 4;
 
   const char *ms =
       st->music == GCU_MUSIC_PLAYING
           ? "PLAY"
           : (st->music == GCU_MUSIC_PAUSED ? "PAUSE" : "IDLE");
   snprintf(line, sizeof line, "%s", ms);
-  hal->fill_rect(hal, x, 208, w, 14, c->bg565);
-  draw_text(hal, x, 208, line, c->ink565, c->bg565, 1);
+  hal->fill_rect(hal, x, y, w, row_h, c->bg565);
+  draw_text(hal, x, y, line, c->ink565, c->bg565, sc);
 }
 
 static void paint_details(gcu_state_t *st) {
@@ -709,14 +727,22 @@ static void paint_details(gcu_state_t *st) {
   hal->fill_rect(hal, 0, 0, GCU_LCD_W, GCU_LCD_H, c.bg565);
   char line[48];
   snprintf(line, sizeof line, "%s %s", GCU_FW_NAME, GCU_FW_VERSION);
-  draw_text(hal, 12, 12, line, c.ink565, c.bg565, 2);
-  draw_text(hal, 12, 48, "Details", c.fg565, c.bg565, 2);
-  draw_text(hal, 12, 88, "accel", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 112, "gyro", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 136, "temp", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 160, "btns", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 184, "heap", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 208, "music", c.ink565, c.bg565, 1);
+  draw_text(hal, 8, 8, line, c.ink565, c.bg565, 2);
+  draw_text(hal, 8, 40, "Details", c.fg565, c.bg565, 2);
+  /* Labels scale 2 (~30%+ larger than prior scale-1). */
+  int ly = 78;
+  const int row_h = 26;
+  draw_text(hal, 8, ly, "acc", c.ink565, c.bg565, 2);
+  ly += row_h;
+  draw_text(hal, 8, ly, "gyr", c.ink565, c.bg565, 2);
+  ly += row_h;
+  draw_text(hal, 8, ly, "tmp", c.ink565, c.bg565, 2);
+  ly += row_h;
+  draw_text(hal, 8, ly, "btn", c.ink565, c.bg565, 2);
+  ly += row_h;
+  draw_text(hal, 8, ly, "mem", c.ink565, c.bg565, 2);
+  ly += row_h;
+  draw_text(hal, 8, ly, "aud", c.ink565, c.bg565, 2);
   if (st->hal && st->hal->read_sensors) {
     (void)st->hal->read_sensors(st->hal, &st->sensors);
   }
@@ -765,7 +791,7 @@ void gcu_paint(gcu_state_t *st) {
     st->needs_banner_paint = 0;
   }
   if (st->needs_eye_paint) {
-    paint_eye(st->hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
+    paint_eye(st->hal, GCU_EYE_RX, GCU_EYE_Y, st->wink_closed, c.fg565, c.bg565);
     st->needs_eye_paint = 0;
   }
   if (st->needs_hints_paint) {
