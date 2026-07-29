@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Drive Xuss-C over serial and assemble a scenario GIF.
+"""Legacy scenario driver — prefer ``tools/demo_record.py``.
+
+``demo_record.py`` uses esprec public API, captions *above* the panel, and
+GIF delays tuned from ``bench_capture_rate.py``. This file keeps the old
+in-panel caption path for reference only.
 
 Sequence (default):
   boot settle → color → gear → color → color → play → wait 5s → color

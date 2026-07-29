@@ -8,6 +8,19 @@ The name is the short half of Turminder Xuss, the drone in Iain M. Banks' *Matte
 
 This repository is a product example used with [Silico](https://github.com/tig/silico).
 
+## Demo (metal, esprec)
+
+Keyframe GIF from a real board (host-paced capture ~0.05 fps @ 115200; playback delays make the story smooth):
+
+![Xuss-C demo](docs/demo/xuss-c-demo.gif)
+
+Pure product pixels (no captions): [docs/demo/xuss-c-demo-product.gif](docs/demo/xuss-c-demo-product.gif). Bench + re-record: [docs/demo/README.md](docs/demo/README.md).
+
+```text
+pip install -e ../esprec
+python tools/demo_record.py --port COMx -o docs/demo --captions
+```
+
 ## Status
 
 **Metal product face (first ship).** Host gate green; `fw_name=XUSSC fw_version=0.0.1` on the link; boot riff, living face (banner + wink), and theme-matched side LEDs observed on M5GO. Full-track SPIFFS stream and live IMU Details still open under `spec.md` L1.

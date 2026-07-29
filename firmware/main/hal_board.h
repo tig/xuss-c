@@ -14,5 +14,7 @@ void board_poll_domain_events(gcu_state_t *st);
 void board_service_serial(gcu_state_t *st);
 void board_park_outputs(void);
 void board_hard_reset(void);
+/* Sample shadow into esprec multi-frame recorder when a session is active. */
+void board_esprec_rec_poll(void);
 
 #endif
