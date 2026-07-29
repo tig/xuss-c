@@ -5,9 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
-/* RGB888 → RGB565 with R/B swap (M5GO IPS pack; knowledge/esp32-lcd-ips.md). */
+/* RGB888 → RGB565. Panel is configured BGR+invert; do not also swap here
+ * (double-swap made dark-blue themes read as purple on M5GO glass). */
 static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
-  return (uint16_t)(((b & 0xF8) << 8) | ((g & 0xFC) << 3) | (r >> 3));
+  return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
 gcu_theme_colors_t gcu_theme_colors(gcu_theme_t theme) {
@@ -45,11 +46,12 @@ gcu_theme_colors_t gcu_theme_colors(gcu_theme_t theme) {
     c.r = 40;
     c.g = 140;
     c.b = 255;
-    c.bg565 = rgb565(0, 10, 40);
+    c.bg565 = rgb565(0, 16, 48);
     break;
   }
   c.fg565 = rgb565(c.r, c.g, c.b);
-  c.hair565 = rgb565((uint8_t)(c.r / 2), (uint8_t)(c.g / 2), (uint8_t)(c.b / 2));
+  c.hair565 = rgb565((uint8_t)(c.r / 3 + 10), (uint8_t)(c.g / 3 + 10),
+                      (uint8_t)(c.b / 3 + 20));
   c.ink565 = rgb565(240, 240, 240);
   return c;
 }
@@ -211,8 +213,8 @@ static void advance_wink_banner(gcu_state_t *st, int64_t now) {
 
   if (now - st->last_banner_ms >= (int64_t)st->banner_step_ms) {
     st->last_banner_ms = now;
-    st->banner_px += 2;
-    if (st->banner_px > 280) {
+    st->banner_px += 1; /* 1px/step at ~25 Hz reads smoother than 2px jumps */
+    if (st->banner_px > 360) {
       st->banner_px = 0;
     }
     st->needs_banner_paint = 1;
@@ -346,6 +348,61 @@ static void draw_text(gcu_hal_t *hal, int x, int y, const char *s, uint16_t fg,
   }
 }
 
+/* Glyph hints (not text labels): palette / play-pause / gear. */
+static void paint_button_glyphs(gcu_hal_t *hal, gcu_state_t *st,
+                                const gcu_theme_colors_t *c) {
+  if (!hal || !hal->fill_rect || !st || !c) {
+    return;
+  }
+  /* Clear hint strip */
+  hal->fill_rect(hal, 0, 205, GCU_LCD_W, 35, c->bg565);
+
+  /* Left: color swatches (3 mini blocks). */
+  int lx = 28;
+  int ly = 214;
+  uint16_t sw[] = {rgb565(40, 140, 255), rgb565(255, 140, 0), rgb565(40, 220, 80)};
+  for (int i = 0; i < 3; i++) {
+    hal->fill_rect(hal, lx + i * 14, ly, 12, 12, sw[i]);
+  }
+
+  /* Middle: play triangle or pause bars. */
+  int mx = 150;
+  int my = 212;
+  if (st->music == GCU_MUSIC_PLAYING) {
+    hal->fill_rect(hal, mx, my, 6, 18, c->ink565);
+    hal->fill_rect(hal, mx + 12, my, 6, 18, c->ink565);
+  } else {
+    for (int row = 0; row < 18; row++) {
+      int w = 2 + row / 2;
+      if (w > 12) {
+        w = 12;
+      }
+      hal->fill_rect(hal, mx, my + row, w, 1, c->ink565);
+    }
+  }
+
+  /* Right: simple gear (hub + teeth). */
+  int gx = 268;
+  int gy = 218;
+  hal->fill_rect(hal, gx + 6, gy, 8, 16, c->ink565);
+  hal->fill_rect(hal, gx, gy + 6, 20, 8, c->ink565);
+  hal->fill_rect(hal, gx + 8, gy + 8, 4, 4, c->bg565);
+}
+
+static void paint_banner(gcu_state_t *st, const gcu_theme_colors_t *c) {
+  gcu_hal_t *hal = st->hal;
+  if (!hal || !hal->fill_rect || !c) {
+    return;
+  }
+  /* Clear hair bar then draw text once per step (scale 1 = less SPI thrash). */
+  hal->fill_rect(hal, 0, 0, GCU_LCD_W, 28, c->hair565);
+  draw_text(hal, GCU_LCD_W - st->banner_px, 10, GCU_BANNER_TEXT, c->ink565,
+            c->hair565, 1);
+  /* Second copy for seamless loop. */
+  draw_text(hal, GCU_LCD_W - st->banner_px + 200, 10, GCU_BANNER_TEXT, c->ink565,
+            c->hair565, 1);
+}
+
 static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
                       uint16_t bg) {
   if (!hal || !hal->fill_rect) {
@@ -369,10 +426,8 @@ static void paint_face_full(gcu_state_t *st) {
   gcu_theme_colors_t c = gcu_theme_colors(st->theme);
   hal->fill_rect(hal, 0, 0, GCU_LCD_W, GCU_LCD_H, c.bg565);
 
-  /* Hair bar */
-  hal->fill_rect(hal, 0, 0, GCU_LCD_W, 28, c.hair565);
-  draw_text(hal, GCU_LCD_W - st->banner_px, 8, GCU_BANNER_TEXT, c.ink565,
-            c.hair565, 2);
+  /* Hair bar + banner (scale 1 for denser scroll; soft-step in tick). */
+  paint_banner(st, &c);
 
   /* Eyes */
   paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
@@ -388,11 +443,7 @@ static void paint_face_full(gcu_state_t *st) {
     draw_text(hal, 60, 185, "First by Tig", c.ink565, c.bg565, 2);
   }
 
-  /* Hints */
-  const char *mid = (st->music == GCU_MUSIC_PLAYING) ? "||" : ">";
-  draw_text(hal, 20, 215, "color", c.ink565, c.bg565, 1);
-  draw_text(hal, 150, 215, mid, c.ink565, c.bg565, 2);
-  draw_text(hal, 260, 215, "gear", c.ink565, c.bg565, 1);
+  paint_button_glyphs(hal, st, &c);
 }
 
 static void paint_details(gcu_state_t *st) {
@@ -441,13 +492,15 @@ void gcu_paint(gcu_state_t *st) {
 
   gcu_theme_colors_t c = gcu_theme_colors(st->theme);
   if (st->needs_banner_paint) {
-    st->hal->fill_rect(st->hal, 0, 0, GCU_LCD_W, 28, c.hair565);
-    draw_text(st->hal, GCU_LCD_W - st->banner_px, 8, GCU_BANNER_TEXT, c.ink565,
-              c.hair565, 2);
+    paint_banner(st, &c);
     st->needs_banner_paint = 0;
   }
   if (st->needs_eye_paint) {
     paint_eye(st->hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
     st->needs_eye_paint = 0;
+  }
+  if (st->needs_hints_paint) {
+    paint_button_glyphs(st->hal, st, &c);
+    st->needs_hints_paint = 0;
   }
 }
