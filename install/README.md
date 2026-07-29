@@ -22,9 +22,11 @@ Identity on the link: `fw_name=XUSSC fw_version=0.1.0` (product contract).
 After boot you should:
 
 1. **Hear** a short multi-note boot greeting (~2.5s) from the M5GO speaker.
-2. **See** a living face on the IPS: eyes + smile, scrolling banner  
-   `Xuss-C; built on ESP-IDF`, theme-colored side LED strips.
-3. Right eye **winks** about every 10 seconds.
-4. Front buttons: **A** cycles color themes, **B** replays the short riff (stand-in until full *First* PCM is product-sourced), **C** opens a Details stub.
+2. **See** a living face on the IPS: round eyes + arc smile, eyebrows, scrolling banner  
+   `Xuss-C; built on ESP-IDF` (single-blit seamless shift), dark-blue default theme.
+3. Side LED strips match the active theme color.
+4. Right eye **winks** about every 10 seconds.
+5. Front glyphs: **A** theme chips, **B** play triangle (pause bars while playing), **C** gear.
+6. Serial identity: `fw_name=XUSSC fw_version=0.1.0` (and `shot` for esprec capture).
 
-Full-track *First by Tig* and live IMU Details are the next domain slice.
+Full-track *First by Tig* PCM asset + live IMU Details are the next domain slice (Stage F).
