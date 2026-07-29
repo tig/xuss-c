@@ -5,6 +5,7 @@
 
 int display_init(void);
 void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565);
+void display_blit(int x, int y, int w, int h, const uint16_t *pixels_native);
 /* Shadow framebuffer for esprec shot (RGB565 words, SPI byte order as drawn). */
 const uint16_t *display_framebuffer(void);
 int display_width(void);

@@ -17,6 +17,8 @@ struct gcu_hal {
   int64_t (*now_ms)(gcu_hal_t *self);
   /* RGB565 fill of axis-aligned rect. */
   void (*fill_rect)(gcu_hal_t *self, int x, int y, int w, int h, uint16_t rgb565);
+  /* RGB565 packed row-major blit (native host words; display converts to SPI BE). */
+  void (*blit)(gcu_hal_t *self, int x, int y, int w, int h, const uint16_t *pixels);
   /* Active-low buttons: 1 = pressed. */
   int (*btn_a)(gcu_hal_t *self);
   int (*btn_b)(gcu_hal_t *self);

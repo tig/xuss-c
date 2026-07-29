@@ -86,6 +86,35 @@ static inline uint16_t rgb565_spi_be(uint16_t native) {
   return (uint16_t)((native >> 8) | (native << 8));
 }
 
+void display_blit(int x, int y, int w, int h, const uint16_t *pixels_native) {
+  if (!s_ready || !s_panel || !pixels_native || w <= 0 || h <= 0) {
+    return;
+  }
+  if (x < 0 || y < 0 || x + w > GCU_LCD_W || y + h > GCU_LCD_H) {
+    return;
+  }
+  size_t n = (size_t)w * (size_t)h;
+  uint16_t *wire = (uint16_t *)malloc(n * sizeof(uint16_t));
+  if (!wire) {
+    return;
+  }
+  for (size_t i = 0; i < n; i++) {
+    wire[i] = rgb565_spi_be(pixels_native[i]);
+  }
+  /* Update half-res shadow (nearest). */
+  for (int row = 0; row < h; row += 2) {
+    for (int col = 0; col < w; col += 2) {
+      int sx = (x + col) / 2;
+      int sy = (y + row) / 2;
+      if (sx >= 0 && sx < SHADOW_W && sy >= 0 && sy < SHADOW_H) {
+        s_fb[sy * SHADOW_W + sx] = wire[row * w + col];
+      }
+    }
+  }
+  esp_lcd_panel_draw_bitmap(s_panel, x, y, x + w, y + h, wire);
+  free(wire);
+}
+
 void display_fill_rect(int x, int y, int w, int h, uint16_t rgb565) {
   if (!s_ready || !s_panel || w <= 0 || h <= 0) {
     return;

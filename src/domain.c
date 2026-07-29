@@ -402,17 +402,57 @@ static void paint_button_glyphs(gcu_hal_t *hal, gcu_state_t *st,
   }
 }
 
+/* Compose 5x7 glyph into a strip buffer (native RGB565). */
+static void stamp_char(uint16_t *buf, int bw, int bh, int x, int y, char ch,
+                       uint16_t fg, uint16_t bg, int scale) {
+  unsigned char c = (unsigned char)ch;
+  if (c >= 'a' && c <= 'z') {
+    c = (unsigned char)(c - 'a' + 'A');
+  }
+  int idx = (c >= 32 && c <= 90) ? (int)(c - 32) : 0;
+  for (int col = 0; col < 5; col++) {
+    uint8_t bits = FONT5X7[idx][col];
+    for (int row = 0; row < 7; row++) {
+      uint16_t color = (bits & (1u << row)) ? fg : bg;
+      for (int sy = 0; sy < scale; sy++) {
+        for (int sx = 0; sx < scale; sx++) {
+          int px = x + col * scale + sx;
+          int py = y + row * scale + sy;
+          if (px >= 0 && px < bw && py >= 0 && py < bh) {
+            buf[py * bw + px] = color;
+          }
+        }
+      }
+    }
+  }
+}
+
 static void paint_banner(gcu_state_t *st, const gcu_theme_colors_t *c) {
   gcu_hal_t *hal = st->hal;
-  if (!hal || !hal->fill_rect || !c) {
+  if (!hal || !c) {
     return;
   }
-  /* Scale 2 for readable banner; dual copy for seamless loop. */
-  hal->fill_rect(hal, 0, 0, GCU_LCD_W, 32, c->hair565);
-  draw_text(hal, GCU_LCD_W - st->banner_px, 8, GCU_BANNER_TEXT, c->ink565,
-            c->hair565, 2);
-  draw_text(hal, GCU_LCD_W - st->banner_px + 320, 8, GCU_BANNER_TEXT, c->ink565,
-            c->hair565, 2);
+  /* Single-strip compose + one blit (avoids per-glyph SPI thrash). */
+  enum { BH = 28 };
+  static uint16_t strip[GCU_LCD_W * BH];
+  for (int i = 0; i < GCU_LCD_W * BH; i++) {
+    strip[i] = c->hair565;
+  }
+  const int scale = 2;
+  const int text_w = (int)strlen(GCU_BANNER_TEXT) * 6 * scale;
+  int x0 = GCU_LCD_W - st->banner_px;
+  for (int copy = 0; copy < 2; copy++) {
+    int cx = x0 + copy * (text_w + 48);
+    for (const char *p = GCU_BANNER_TEXT; *p; p++) {
+      stamp_char(strip, GCU_LCD_W, BH, cx, 6, *p, c->ink565, c->hair565, scale);
+      cx += 6 * scale;
+    }
+  }
+  if (hal->blit) {
+    hal->blit(hal, 0, 0, GCU_LCD_W, BH, strip);
+  } else if (hal->fill_rect) {
+    hal->fill_rect(hal, 0, 0, GCU_LCD_W, BH, c->hair565);
+  }
 }
 
 static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
@@ -420,22 +460,43 @@ static void paint_eye(gcu_hal_t *hal, int cx, int cy, int closed, uint16_t fg,
   if (!hal || !hal->fill_rect) {
     return;
   }
-  /* Clear including brow band. */
-  hal->fill_rect(hal, cx - 20, cy - 28, 40, 48, bg);
+  /* Clean region — no under-eye bars. */
+  hal->fill_rect(hal, cx - 22, cy - 30, 44, 44, bg);
   /* Eyebrow */
-  hal->fill_rect(hal, cx - 14, cy - 24, 28, 5, fg);
+  for (int i = 0; i < 3; i++) {
+    hal->fill_rect(hal, cx - 13 + i, cy - 26 + i / 2, 26 - 2 * i, 3, fg);
+  }
   if (closed) {
-    /* Closed lid: thick arc-ish bar. */
-    for (int i = 0; i < 4; i++) {
-      int inset = i;
-      hal->fill_rect(hal, cx - 14 + inset, cy - 2 + i, 28 - 2 * inset, 2, fg);
+    for (int i = 0; i < 3; i++) {
+      int inset = i * 2;
+      hal->fill_rect(hal, cx - 12 + inset, cy - i, 24 - 2 * inset, 3, fg);
     }
   } else {
-    /* Round-ish eye: concentric squares (coarse circle). */
-    hal->fill_rect(hal, cx - 12, cy - 10, 24, 24, fg);
-    hal->fill_rect(hal, cx - 10, cy - 12, 20, 28, fg);
-    /* Pupil */
-    hal->fill_rect(hal, cx - 5, cy - 5, 10, 10, bg);
+    int r = 11;
+    for (int dy = -r; dy <= r; dy++) {
+      int half = 0;
+      for (int t = r; t >= 0; t--) {
+        if (dy * dy + t * t <= r * r) {
+          half = t;
+          break;
+        }
+      }
+      if (half > 0) {
+        hal->fill_rect(hal, cx - half, cy + dy, half * 2, 1, fg);
+      }
+    }
+    for (int dy = -4; dy <= 4; dy++) {
+      int half = 0;
+      for (int t = 4; t >= 0; t--) {
+        if (dy * dy + t * t <= 16) {
+          half = t;
+          break;
+        }
+      }
+      if (half > 0) {
+        hal->fill_rect(hal, cx - half, cy + dy, half * 2, 1, bg);
+      }
+    }
   }
 }
 
@@ -454,19 +515,41 @@ static void paint_face_full(gcu_state_t *st) {
   paint_eye(hal, 110, 95, 0, c.fg565, c.bg565);
   paint_eye(hal, 210, 95, st->wink_closed, c.fg565, c.bg565);
 
-  /* Rounder smile: stepped arc (U). */
+  /* Friendly smile: circular arc stroke (lower half). */
   {
-    const int smy = 155;
-    /* bottom curve */
-    hal->fill_rect(hal, 120, smy + 22, 80, 6, c.fg565);
-    /* lower sides */
-    hal->fill_rect(hal, 108, smy + 14, 14, 14, c.fg565);
-    hal->fill_rect(hal, 198, smy + 14, 14, 14, c.fg565);
-    /* upper corners */
-    hal->fill_rect(hal, 100, smy + 4, 12, 14, c.fg565);
-    hal->fill_rect(hal, 208, smy + 4, 12, 14, c.fg565);
-    /* clear inner so it is a stroke, not a block */
-    hal->fill_rect(hal, 118, smy + 10, 84, 16, c.bg565);
+    const int scx = 160;
+    const int scy = 148;
+    const int ro = 42;
+    const int ri = 34;
+    for (int y = 0; y <= ro; y++) {
+      int x_out = 0, x_in = 0;
+      for (int t = ro; t >= 0; t--) {
+        if (y * y + t * t <= ro * ro) {
+          x_out = t;
+          break;
+        }
+      }
+      for (int t = ri; t >= 0; t--) {
+        if (y * y + t * t <= ri * ri) {
+          x_in = t;
+          break;
+        }
+      }
+      if (x_out > x_in) {
+        /* left and right segments of the arc ring */
+        int ypix = scy + y;
+        int xl0 = scx - x_out;
+        int xl1 = scx - x_in;
+        int xr0 = scx + x_in;
+        int xr1 = scx + x_out;
+        if (xl1 > xl0) {
+          hal->fill_rect(hal, xl0, ypix, xl1 - xl0, 1, c.fg565);
+        }
+        if (xr1 > xr0) {
+          hal->fill_rect(hal, xr0, ypix, xr1 - xr0, 1, c.fg565);
+        }
+      }
+    }
   }
 
   /* Playing cue */

@@ -43,6 +43,12 @@ static void fill_rect(gcu_hal_t *self, int x, int y, int w, int h,
   display_fill_rect(x, y, w, h, rgb565);
 }
 
+static void blit(gcu_hal_t *self, int x, int y, int w, int h,
+                 const uint16_t *pixels) {
+  (void)self;
+  display_blit(x, y, w, h, pixels);
+}
+
 static int btn_level(int gpio) {
   /* Active-low with external pull-ups on M5. */
   return gpio_get_level(gpio) == 0 ? 1 : 0;
@@ -83,6 +89,7 @@ static gcu_hal_t board_hal = {
     .delay_ms = delay_ms,
     .now_ms = now_ms,
     .fill_rect = fill_rect,
+    .blit = blit,
     .btn_a = btn_a,
     .btn_b = btn_b,
     .btn_c = btn_c,
