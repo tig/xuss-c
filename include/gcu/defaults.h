@@ -9,6 +9,7 @@
 #define GCU_BANNER_STEP_MS 20
 #define GCU_DEBOUNCE_MS 40
 #define GCU_SAMPLE_RATE_HZ 22050
+#define GCU_DETAILS_PERIOD_MS 100
 
 /* M5GO pin pack (board-profile m5go candidates). */
 #define GCU_PIN_SIDE_LED 15

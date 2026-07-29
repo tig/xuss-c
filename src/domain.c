@@ -144,11 +144,15 @@ static void handle_buttons(gcu_state_t *st, int64_t now) {
       st->screen = GCU_SCREEN_FACE;
       st->needs_full_paint = 1;
     } else if (st->music == GCU_MUSIC_PLAYING) {
+      if (st->hal->audio_position) {
+        st->song_offset = st->hal->audio_position(st->hal);
+      }
       if (st->hal->audio_stop) {
         st->hal->audio_stop(st->hal);
       }
       st->music = GCU_MUSIC_PAUSED;
       st->needs_hints_paint = 1;
+      st->needs_full_paint = 1;
     } else {
       cycle_theme(st);
     }
@@ -157,28 +161,36 @@ static void handle_buttons(gcu_state_t *st, int64_t now) {
   if (edge_press(st->prev_b, b)) {
     st->last_btn_ms = now;
     if (st->music == GCU_MUSIC_PLAYING) {
+      if (st->hal->audio_position) {
+        st->song_offset = st->hal->audio_position(st->hal);
+      }
       if (st->hal->audio_stop) {
         st->hal->audio_stop(st->hal);
       }
       st->music = GCU_MUSIC_PAUSED;
     } else if (st->music == GCU_MUSIC_PAUSED || st->music == GCU_MUSIC_IDLE) {
-      const uint8_t *pcm = st->song_pcm;
-      int len = st->song_pcm_len;
-      if ((!pcm || len <= 0) && st->boot_pcm && st->boot_pcm_len > 0) {
-        /* First-ship stand-in until First.pcm is product-sourced. */
-        pcm = st->boot_pcm;
-        len = st->boot_pcm_len;
-        st->song_offset = 0;
-      }
-      if (pcm && len > 0 && st->hal->play_pcm) {
-        int off = (st->music == GCU_MUSIC_PAUSED) ? st->song_offset : 0;
-        if (off < 0 || off >= len) {
+      int off = (st->music == GCU_MUSIC_PAUSED) ? st->song_offset : 0;
+      int ok = -1;
+      int song_sz = st->hal->song_size ? st->hal->song_size(st->hal) : 0;
+      const char *path = st->hal->song_path ? st->hal->song_path(st->hal) : NULL;
+      if (path && song_sz > 0 && st->hal->play_file) {
+        if (off < 0 || off >= song_sz) {
           off = 0;
         }
-        if (st->hal->play_pcm(st->hal, pcm + off, len - off, st->sample_rate_hz) ==
-            0) {
-          st->music = GCU_MUSIC_PLAYING;
+        ok = st->hal->play_file(st->hal, path, st->sample_rate_hz, off);
+      } else if (st->song_pcm && st->song_pcm_len > 0 && st->hal->play_pcm) {
+        if (off < 0 || off >= st->song_pcm_len) {
+          off = 0;
         }
+        ok = st->hal->play_pcm(st->hal, st->song_pcm + off,
+                               st->song_pcm_len - off, st->sample_rate_hz);
+      } else if (st->boot_pcm && st->boot_pcm_len > 0 && st->hal->play_pcm) {
+        /* Fallback stand-in if SPIFFS First.pcm missing. */
+        ok = st->hal->play_pcm(st->hal, st->boot_pcm, st->boot_pcm_len,
+                               st->sample_rate_hz);
+      }
+      if (ok == 0) {
+        st->music = GCU_MUSIC_PLAYING;
       }
     }
     st->needs_hints_paint = 1;
@@ -245,6 +257,16 @@ void gcu_tick(gcu_state_t *st) {
       st->song_offset = 0;
       st->needs_hints_paint = 1;
       st->needs_full_paint = 1;
+    }
+  }
+
+  if (st->screen == GCU_SCREEN_DETAILS) {
+    if (now - st->last_details_ms >= 100) {
+      st->last_details_ms = now;
+      if (st->hal && st->hal->read_sensors) {
+        (void)st->hal->read_sensors(st->hal, &st->sensors);
+      }
+      st->needs_details_values = 1;
     }
   }
 
@@ -631,6 +653,46 @@ static void paint_face_full(gcu_state_t *st) {
   paint_button_glyphs(hal, st, &c);
 }
 
+static void paint_details_values(gcu_state_t *st, const gcu_theme_colors_t *c) {
+  gcu_hal_t *hal = st->hal;
+  if (!hal || !hal->fill_rect || !c) {
+    return;
+  }
+  char line[40];
+  /* Value strips only — labels stay put. */
+  const int x = 100;
+  const int w = 210;
+  const gcu_sensors_t *s = &st->sensors;
+
+  snprintf(line, sizeof line, "%+.2f %+.2f %+.2f", s->ax, s->ay, s->az);
+  hal->fill_rect(hal, x, 88, w, 14, c->bg565);
+  draw_text(hal, x, 88, line, c->ink565, c->bg565, 1);
+
+  snprintf(line, sizeof line, "%+.1f %+.1f %+.1f", s->gx, s->gy, s->gz);
+  hal->fill_rect(hal, x, 112, w, 14, c->bg565);
+  draw_text(hal, x, 112, line, c->ink565, c->bg565, 1);
+
+  snprintf(line, sizeof line, "%+.1f C", s->temp_c);
+  hal->fill_rect(hal, x, 136, w, 14, c->bg565);
+  draw_text(hal, x, 136, line, c->ink565, c->bg565, 1);
+
+  snprintf(line, sizeof line, "%d %d %d", s->btn_a, s->btn_b, s->btn_c);
+  hal->fill_rect(hal, x, 160, w, 14, c->bg565);
+  draw_text(hal, x, 160, line, c->ink565, c->bg565, 1);
+
+  snprintf(line, sizeof line, "%d", s->heap_free);
+  hal->fill_rect(hal, x, 184, w, 14, c->bg565);
+  draw_text(hal, x, 184, line, c->ink565, c->bg565, 1);
+
+  const char *ms =
+      st->music == GCU_MUSIC_PLAYING
+          ? "PLAY"
+          : (st->music == GCU_MUSIC_PAUSED ? "PAUSE" : "IDLE");
+  snprintf(line, sizeof line, "%s", ms);
+  hal->fill_rect(hal, x, 208, w, 14, c->bg565);
+  draw_text(hal, x, 208, line, c->ink565, c->bg565, 1);
+}
+
 static void paint_details(gcu_state_t *st) {
   gcu_hal_t *hal = st->hal;
   if (!hal || !hal->fill_rect) {
@@ -640,13 +702,18 @@ static void paint_details(gcu_state_t *st) {
   hal->fill_rect(hal, 0, 0, GCU_LCD_W, GCU_LCD_H, c.bg565);
   char line[48];
   snprintf(line, sizeof line, "%s %s", GCU_FW_NAME, GCU_FW_VERSION);
-  draw_text(hal, 12, 20, line, c.ink565, c.bg565, 2);
-  draw_text(hal, 12, 60, "Details", c.fg565, c.bg565, 2);
-  draw_text(hal, 12, 100, "IMU live next", c.ink565, c.bg565, 1);
-  draw_text(hal, 12, 130, "A: back to face", c.ink565, c.bg565, 1);
-  if (st->music == GCU_MUSIC_PLAYING) {
-    draw_text(hal, 12, 160, "Music playing", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 12, line, c.ink565, c.bg565, 2);
+  draw_text(hal, 12, 48, "Details", c.fg565, c.bg565, 2);
+  draw_text(hal, 12, 88, "accel", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 112, "gyro", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 136, "temp", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 160, "btns", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 184, "heap", c.ink565, c.bg565, 1);
+  draw_text(hal, 12, 208, "music", c.ink565, c.bg565, 1);
+  if (st->hal && st->hal->read_sensors) {
+    (void)st->hal->read_sensors(st->hal, &st->sensors);
   }
+  paint_details_values(st, &c);
 }
 
 void gcu_paint(gcu_state_t *st) {
@@ -668,6 +735,16 @@ void gcu_paint(gcu_state_t *st) {
     st->needs_eye_paint = 0;
     st->needs_banner_paint = 0;
     st->needs_hints_paint = 0;
+    st->needs_details_values = 0;
+    return;
+  }
+
+  if (st->screen == GCU_SCREEN_DETAILS) {
+    if (st->needs_details_values) {
+      gcu_theme_colors_t c = gcu_theme_colors(st->theme);
+      paint_details_values(st, &c);
+      st->needs_details_values = 0;
+    }
     return;
   }
 

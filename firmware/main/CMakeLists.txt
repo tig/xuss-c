@@ -1,8 +1,8 @@
 idf_component_register(
-  SRCS "main.c" "hal_board.c" "display.c" "leds.c" "audio.c"
+  SRCS "main.c" "hal_board.c" "display.c" "leds.c" "audio.c" "imu.c" "storage.c"
        "../../src/defaults.c" "../../src/domain.c"
   INCLUDE_DIRS "." "../../include"
   EMBED_FILES "../../assets/boot_riff.pcm"
-  REQUIRES esprec driver esp_timer esp_lcd freertos
+  REQUIRES esprec driver esp_timer esp_lcd freertos spiffs esp_partition
   PRIV_REQUIRES espressif__esp_lcd_ili9341 espressif__led_strip
 )

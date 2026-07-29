@@ -51,12 +51,15 @@ typedef struct {
   int needs_eye_paint;
   int needs_banner_paint;
   int needs_hints_paint;
+  int needs_details_values;
 
   int64_t last_wink_ms;
   int64_t wink_until_ms;
   int64_t last_banner_ms;
   int64_t last_btn_ms;
+  int64_t last_details_ms;
   int prev_a, prev_b, prev_c;
+  gcu_sensors_t sensors;
 
   /* Boot / song assets (metal fills pointers; host tests may leave NULL). */
   const uint8_t *boot_pcm;

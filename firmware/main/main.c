@@ -107,6 +107,10 @@ void app_main(void) {
   gcu_init(&st, hal);
   gcu_set_assets(&st, _binary_boot_riff_pcm_start, boot_len, NULL, 0,
                  GCU_SAMPLE_RATE_HZ);
+  /* Let DAC continuous DMA settle before boot riff (avoids load timeout). */
+  if (hal && hal->delay_ms) {
+    hal->delay_ms(hal, 80);
+  }
   /* Boot riff ~2.5s — operator may hear speaker greeting. */
   gcu_start_boot(&st);
 

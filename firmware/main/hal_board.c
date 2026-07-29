@@ -3,18 +3,22 @@
 
 #include "audio.h"
 #include "display.h"
+#include "imu.h"
 #include "leds.h"
+#include "storage.h"
 
 #include "gcu/defaults.h"
 
 #include "driver/gpio.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <string.h>
+
 static void set_led(gcu_hal_t *self, int on) {
   (void)self;
-  /* Map plate LED to side strip pulse for visibility. */
   if (on) {
     leds_set_rgb(40, 140, 255);
   } else {
@@ -49,10 +53,7 @@ static void blit(gcu_hal_t *self, int x, int y, int w, int h,
   display_blit(x, y, w, h, pixels);
 }
 
-static int btn_level(int gpio) {
-  /* Active-low with external pull-ups on M5. */
-  return gpio_get_level(gpio) == 0 ? 1 : 0;
-}
+static int btn_level(int gpio) { return gpio_get_level(gpio) == 0 ? 1 : 0; }
 
 static int btn_a(gcu_hal_t *self) {
   (void)self;
@@ -73,14 +74,59 @@ static int play_pcm(gcu_hal_t *self, const uint8_t *data, int len,
   return audio_play_pcm(data, len, sample_rate);
 }
 
+static int play_file(gcu_hal_t *self, const char *path, int sample_rate,
+                     int start_offset) {
+  (void)self;
+  return audio_play_file(path, sample_rate, start_offset);
+}
+
 static int audio_busy_hal(gcu_hal_t *self) {
   (void)self;
   return audio_busy();
 }
 
+static int audio_position_hal(gcu_hal_t *self) {
+  (void)self;
+  return audio_position();
+}
+
 static void audio_stop_hal(gcu_hal_t *self) {
   (void)self;
   audio_stop();
+}
+
+static int read_sensors(gcu_hal_t *self, gcu_sensors_t *out) {
+  (void)self;
+  if (!out) {
+    return -1;
+  }
+  imu_sample_t s;
+  memset(out, 0, sizeof(*out));
+  out->btn_a = btn_level(GCU_PIN_BTN_A);
+  out->btn_b = btn_level(GCU_PIN_BTN_B);
+  out->btn_c = btn_level(GCU_PIN_BTN_C);
+  out->heap_free = (int)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  if (imu_read(&s) == 0 && s.present) {
+    out->present = 1;
+    out->ax = s.ax;
+    out->ay = s.ay;
+    out->az = s.az;
+    out->gx = s.gx;
+    out->gy = s.gy;
+    out->gz = s.gz;
+    out->temp_c = s.temp_c;
+  }
+  return 0;
+}
+
+static int song_size(gcu_hal_t *self) {
+  (void)self;
+  return (int)storage_first_pcm_size();
+}
+
+static const char *song_path(gcu_hal_t *self) {
+  (void)self;
+  return storage_first_pcm_path();
 }
 
 static gcu_hal_t board_hal = {
@@ -94,8 +140,13 @@ static gcu_hal_t board_hal = {
     .btn_b = btn_b,
     .btn_c = btn_c,
     .play_pcm = play_pcm,
+    .play_file = play_file,
     .audio_busy = audio_busy_hal,
+    .audio_position = audio_position_hal,
     .audio_stop = audio_stop_hal,
+    .read_sensors = read_sensors,
+    .song_size = song_size,
+    .song_path = song_path,
 };
 
 gcu_hal_t *gcu_make_board_hal(void) {
@@ -111,5 +162,7 @@ gcu_hal_t *gcu_make_board_hal(void) {
   (void)display_init();
   (void)leds_init();
   (void)audio_init();
+  (void)storage_init();
+  (void)imu_init();
   return &board_hal;
 }
