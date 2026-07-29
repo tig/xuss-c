@@ -67,10 +67,19 @@ static int i2s_open(int sample_rate) {
   return 0;
 }
 
-/* Expand u8 mono → 16-bit samples for I2S DAC (value in high byte). */
+/* Expand u8 mono → 16-bit samples for I2S DAC (value in high byte).
+ * Soft masters (First.pcm mean-dev is low) get ~2× digital gain, clipped. */
 static size_t expand_u8(const uint8_t *src, int n, int16_t *dst) {
   for (int i = 0; i < n; i++) {
-    dst[i] = (int16_t)(((uint16_t)src[i]) << 8);
+    int v = (int)src[i] - 128;
+    v *= 2;
+    if (v > 127) {
+      v = 127;
+    }
+    if (v < -128) {
+      v = -128;
+    }
+    dst[i] = (int16_t)((uint16_t)(v + 128) << 8);
   }
   return (size_t)n * sizeof(int16_t);
 }
