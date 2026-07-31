@@ -1,6 +1,8 @@
 # Xuss-C Software Specification
 
-**Rev 0.3, July 2026**
+**Rev 0.3.1, July 2026**
+
+> Rev 0.3.1 clarifies three points that Rev 0.3 left open; no product behavior changes. §4.2 banner casing, §4.4 no substitute asset when the track is missing, §7 diagnostic commands are not product surface.
 
 Xuss-C is a pocket companion for the M5Stack **M5GO IoT Starter Kit v2.7**. It boots with a short musical greeting, shows a living face on the screen, plays a full song on demand, and exposes a simple details screen for the sensors built into the M5GO core.
 
@@ -230,6 +232,7 @@ Boot riff end must not click or hard-cut into silence; ease out cleanly.
 
 - Eyes, smile, and theme colors on the IPS panel.
 - Hair banner scrolls smoothly right → left with text **`Xuss-C; built on ESP-IDF`** (note the semicolon). Banner motion updates only the hair-bar region (not a full-panel redraw every step).
+  - The banner renders **as written, in mixed case**. An upper-case-only font is not an acceptable substitute for the specified string.
 - Right-eye wink on a **time-based** ~10 s period (not "every N control ticks"). A wink **repaints only the affected eye** (open ↔ closed). It must not clear or redraw the whole screen, the other eye, the smile, the banner, or the button hints.
 - Side LEDs match the active theme; **black** theme forces side LEDs fully off and uses a white background with black face features.
 - Bottom of the panel shows persistent hints: **color** / play-or-pause glyph / gear glyph.
@@ -238,7 +241,7 @@ Face animation timing is wall-clock based, never "tick count" based. Prefer regi
 
 **While full-song audio is active**, the same face remains the primary view: wink and banner **continue**. Show a clear playing cue that includes the title **First by Tig** (for example a compact status line or title under the face). Do **not** replace the living face with a static full-screen freeze.
 
-**Glyph set:** every on-screen string the product shows (banner, labels, firmware version, sensor values, song title) must render with a font that includes at least space, `0–9`, `+`, `-`, `.`, and the letters used in product copy. Missing glyphs that draw as solid blocks are a product defect.
+**Glyph set:** every on-screen string the product shows (banner, labels, firmware version, sensor values, song title) must render with a font that includes at least space, `0–9`, `+`, `-`, `.`, and the letters used in product copy — in **both** cases where product copy uses both. Missing glyphs that draw as solid blocks are a product defect; so is silently case-folding copy to fit a smaller font.
 
 ### 4.3 Themes (Button A)
 
@@ -257,6 +260,8 @@ One edge per press (debounce). Themes retint face, hair bar, banner ink, and sid
 ### 4.4 Music (Button B)
 
 Full-track asset: entire *First* as unsigned 8-bit mono PCM at the project sample rate, **streamed from on-device storage** (not held entirely in RAM). Deploy must place the file on the device filesystem (or embedded partition) and **verify non-zero size**. If the file is missing or empty, refuse playback with a clear link status (and do not hang the UI).
+
+**Refusing means refusing.** Do not substitute another asset — the boot riff, a tone, a truncated sample — in place of the missing track. A stand-in that sounds like the product is working hides a broken deploy from the operator, which is worse than silence with a clear status.
 
 State machine:
 
